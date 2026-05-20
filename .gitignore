@@ -1,11 +1,10 @@
-venv/
 .env
-__pycache__/
+venv/
 node_modules/
-dist/
-build/
+__pycache__/
 *.pyc
-server.log
 *.log
-server.log
-backend/server.log
+uploads/
+backend/faiss_index/
+backend/__pycache__/
+frontend/node_modules/
