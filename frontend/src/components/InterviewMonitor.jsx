@@ -1,0 +1,281 @@
+import { useEffect, useRef, useState } from 'react';
+import API from '../api/client';
+
+export default function InterviewMonitor({ candidateId, onStop }) {
+  const videoRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  
+  const statsRef = useRef({
+    looking_away_count: 0,
+    no_face_count: 0,
+    multiple_faces_count: 0,
+  });
+
+  const [status, setStatus] = useState('Initializing monitoring...');
+  const [currentFocus, setCurrentFocus] = useState('Stable');
+  const [riskAlert, setRiskAlert] = useState(null);
+
+  useEffect(() => {
+    let stream = null;
+    let statInterval = null;
+    let audioContext = null;
+    let analyser = null;
+    let lastInference = 0;
+    const INFERENCE_THROTTLE_MS = 200; // ~5 FPS for CPU efficiency
+
+    const startMonitoring = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+
+        // --- Event Listeners for Cheating Detection ---
+        const handleBlur = () => {
+          statsRef.current.tab_switches = (statsRef.current.tab_switches || 0) + 1;
+          statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
+          statsRef.current.suspicious_events.push({ type: 'tab_switch', time: new Date().toISOString() });
+        };
+        const handleCopy = () => {
+          statsRef.current.copy_paste_count = (statsRef.current.copy_paste_count || 0) + 1;
+          statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
+          statsRef.current.suspicious_events.push({ type: 'copy_action', time: new Date().toISOString() });
+        };
+        const handlePaste = () => {
+          statsRef.current.copy_paste_count = (statsRef.current.copy_paste_count || 0) + 1;
+          statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
+          statsRef.current.suspicious_events.push({ type: 'paste_action', time: new Date().toISOString() });
+        };
+
+        window.addEventListener('blur', handleBlur);
+        window.addEventListener('copy', handleCopy);
+        window.addEventListener('paste', handlePaste);
+
+        // --- Audio Recording (Chunks every 10s) ---
+        mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        mediaRecorderRef.current.ondataavailable = async (e) => {
+          if (e.data.size > 0) {
+            const formData = new FormData();
+            formData.append('audio', e.data, 'chunk.webm');
+            formData.append('candidate_id', candidateId);
+            try {
+              await API.post('/audio/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+              });
+            } catch (err) {
+              console.error('Audio chunk upload failed', err);
+            }
+          }
+        };
+        mediaRecorderRef.current.start(10000);
+
+        // --- Audio Analysis (Silence Detection) ---
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        analyser.fftSize = 256;
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        
+        let silenceStart = null;
+        const checkSilence = () => {
+          analyser.getByteFrequencyData(dataArray);
+          const volume = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          
+          if (volume < 5) { // Threshold for silence
+             if (!silenceStart) silenceStart = Date.now();
+             else if (Date.now() - silenceStart > 10000) { // 10s of silence
+                statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
+                if (!statsRef.current.suspicious_events.some(e => e.type === 'long_silence')) {
+                    statsRef.current.suspicious_events.push({ type: 'long_silence', time: new Date().toISOString(), detail: 'Extended silence detected' });
+                }
+             }
+          } else {
+             silenceStart = null;
+          }
+          if (audioContext.state !== 'closed') requestAnimationFrame(checkSilence);
+        };
+        checkSilence();
+
+        // --- Face Monitoring (MediaPipe) ---
+        faceMesh = new window.FaceMesh({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+        });
+
+        faceMesh.setOptions({
+          maxNumFaces: 2, // detect if someone else is there
+          refineLandmarks: true,
+          minDetectionConfidence: 0.6,
+          minTrackingConfidence: 0.6
+        });
+
+        faceMesh.onResults((results) => {
+          if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+            statsRef.current.no_face_count += 1;
+            statsRef.current.presence = false;
+            setCurrentFocus('Not Detected');
+            return;
+          }
+
+          statsRef.current.presence = true;
+          const faces = results.multiFaceLandmarks.length;
+          if (faces > 1) {
+            statsRef.current.multiple_faces_count += 1;
+            setRiskAlert('Security Alert: Multiple People Detected');
+            statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
+            const now = Date.now();
+            if (!statsRef.current.suspicious_events.some(e => e.type === 'multiple_faces' && (now - new Date(e.time).getTime() < 10000))) {
+                statsRef.current.suspicious_events.push({ type: 'multiple_faces', time: new Date().toISOString(), detail: `${faces} people detected` });
+            }
+          } else {
+            setRiskAlert(null);
+          }
+
+          const landmarks = results.multiFaceLandmarks[0];
+          
+          // 1. Precise Gaze & Iris Tracking
+          const leftIris = landmarks[468];
+          const rightIris = landmarks[473];
+          const leftEyeOuter = landmarks[33];
+          const leftEyeInner = landmarks[133];
+
+          if (leftIris && rightIris) {
+            const gazeX = (leftIris.x - leftEyeOuter.x) / (leftEyeInner.x - leftEyeOuter.x);
+            if (gazeX < 0.2 || gazeX > 0.8) {
+               statsRef.current.looking_away_count += 1;
+               setCurrentFocus('Looking Away');
+            } else {
+               setCurrentFocus('Stable');
+            }
+          }
+
+          // 2. Head Pose
+          const nose = landmarks[1];
+          const leftEar = landmarks[234];
+          const rightEar = landmarks[454];
+          const forehead = landmarks[10];
+          const chin = landmarks[152];
+
+          const yaw = (nose.x - (leftEar.x + rightEar.x) / 2) / (rightEar.x - leftEar.x);
+          const pitch = (nose.y - (forehead.y + chin.y) / 2) / (chin.y - forehead.y);
+
+          if (Math.abs(yaw) > 0.25 || Math.abs(pitch) > 0.25) {
+             statsRef.current.looking_away_count += 0.5;
+             setCurrentFocus('Distracted');
+             if (Math.abs(yaw) > 0.4 || Math.abs(pitch) > 0.4) {
+                 statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
+                 if (!statsRef.current.suspicious_events.some(e => e.type === 'looking_away_repeatedly')) {
+                    statsRef.current.suspicious_events.push({ type: 'looking_away_repeatedly', time: new Date().toISOString() });
+                 }
+             }
+          }
+          
+          // 3. Posture Stability
+          const currentY = landmarks[1].y;
+          if (statsRef.current.lastY && Math.abs(currentY - statsRef.current.lastY) > 0.1) {
+              statsRef.current.posture_shift = (statsRef.current.posture_shift || 0) + 1;
+          }
+          statsRef.current.lastY = currentY;
+        });
+
+        camera = new window.Camera(videoRef.current, {
+          onFrame: async () => {
+            if (!videoRef.current || !faceMesh) return;
+            
+            const now = Date.now();
+            if (now - lastInference < INFERENCE_THROTTLE_MS) return;
+            
+            lastInference = now;
+            await faceMesh.send({image: videoRef.current});
+          },
+          width: 320,
+          height: 240
+        });
+        camera.start();
+
+        setStatus('Monitoring Active');
+
+        // --- Stat reporting every 5s ---
+        statInterval = setInterval(() => {
+          API.post('/interviews/face-stats', {
+            candidate_id: candidateId,
+            looking_away_count: Math.floor(statsRef.current.looking_away_count),
+            no_face_count: statsRef.current.no_face_count,
+            multiple_faces_count: statsRef.current.multiple_faces_count,
+            tab_switches: statsRef.current.tab_switches || 0,
+            copy_paste_count: statsRef.current.copy_paste_count || 0,
+            posture_shift: statsRef.current.posture_shift || 0,
+            presence: statsRef.current.presence ?? true,
+            suspicious_events: statsRef.current.suspicious_events || []
+          }).catch(console.error);
+
+          // Reset stats for next 5s window
+          statsRef.current = { 
+            ...statsRef.current,
+            looking_away_count: 0, no_face_count: 0, multiple_faces_count: 0,
+            tab_switches: 0, copy_paste_count: 0, posture_shift: 0, suspicious_events: []
+          };
+        }, 5000);
+
+      } catch (err) {
+        setStatus('Failed to start monitoring (No camera/mic?)');
+        console.error(err);
+      }
+    };
+
+    startMonitoring();
+
+    return () => {
+      clearInterval(statInterval);
+      if (camera) camera.stop();
+      if (faceMesh) faceMesh.close();
+      if (audioContext) audioContext.close();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+      }
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+      }
+    };
+  }, [candidateId]);
+
+  return (
+    <div style={{ padding: 12, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, display: 'flex', gap: 16, alignItems: 'center', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+      <div style={{ position: 'relative', width: 140, height: 105, borderRadius: 10, overflow: 'hidden', background: '#000' }}>
+        <video 
+          ref={videoRef} 
+          style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} 
+          autoPlay playsInline muted 
+        />
+        <div style={{ position: 'absolute', bottom: 6, left: 6, right: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ background: 'rgba(15, 23, 42, 0.7)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, backdropFilter: 'blur(4px)', textAlign: 'center' }}>
+            {currentFocus.toUpperCase()}
+          </div>
+          {riskAlert && (
+             <div style={{ background: 'rgba(239, 68, 68, 0.9)', color: '#fff', fontSize: 8, fontWeight: 900, padding: '2px 4px', borderRadius: 4, textAlign: 'center' }}>
+               ⚠️ RISK ALERT
+             </div>
+          )}
+        </div>
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: status.includes('Active') ? '#10b981' : '#ef4444', animation: status.includes('Active') ? 'pulse 2s infinite' : 'none' }} />
+          <div style={{ fontWeight: 800, fontSize: 13, color: '#1e293b', letterSpacing: '0.3px' }}>
+            {status}
+          </div>
+        </div>
+        <p style={{ fontSize: 11, color: '#64748b', fontWeight: 500, lineHeight: 1.4 }}>
+          AI Behavioral Tracking Active. <br/>Analyzing attention & integrity.
+        </p>
+      </div>
+      <style>{`
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.2); opacity: 0.6; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
