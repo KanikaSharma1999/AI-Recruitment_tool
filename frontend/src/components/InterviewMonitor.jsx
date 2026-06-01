@@ -34,26 +34,7 @@ export default function InterviewMonitor({ candidateId, onStop }) {
           videoRef.current.srcObject = stream;
         }
 
-        // --- Event Listeners for Cheating Detection ---
-        const handleBlur = () => {
-          statsRef.current.tab_switches = (statsRef.current.tab_switches || 0) + 1;
-          statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
-          statsRef.current.suspicious_events.push({ type: 'tab_switch', time: new Date().toISOString() });
-        };
-        const handleCopy = () => {
-          statsRef.current.copy_paste_count = (statsRef.current.copy_paste_count || 0) + 1;
-          statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
-          statsRef.current.suspicious_events.push({ type: 'copy_action', time: new Date().toISOString() });
-        };
-        const handlePaste = () => {
-          statsRef.current.copy_paste_count = (statsRef.current.copy_paste_count || 0) + 1;
-          statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
-          statsRef.current.suspicious_events.push({ type: 'paste_action', time: new Date().toISOString() });
-        };
-
-        window.addEventListener('blur', handleBlur);
-        window.addEventListener('copy', handleCopy);
-        window.addEventListener('paste', handlePaste);
+        // --- Event Listeners for Cheating Detection (Managed by parent CandidateInterview page) ---
 
         // --- Audio Recording (Chunks every 10s with valid WebM headers) ---
         mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
@@ -124,6 +105,19 @@ export default function InterviewMonitor({ candidateId, onStop }) {
             statsRef.current.no_face_count += 1;
             statsRef.current.presence = false;
             setCurrentFocus('Not Detected');
+            
+            // Report to proctoring violations
+            const now = Date.now();
+            if (!statsRef.current.lastNoFaceReported || (now - statsRef.current.lastNoFaceReported > 15000)) {
+              statsRef.current.lastNoFaceReported = now;
+              API.post('/interviews/proctoring-event', {
+                candidate_id: candidateId,
+                violation_type: 'face_absent',
+                severity: 'high',
+                details: 'No face detected in camera feed',
+                count: 1
+              }).catch(() => {});
+            }
             return;
           }
 
@@ -136,6 +130,17 @@ export default function InterviewMonitor({ candidateId, onStop }) {
             const now = Date.now();
             if (!statsRef.current.suspicious_events.some(e => e.type === 'multiple_faces' && (now - new Date(e.time).getTime() < 10000))) {
                 statsRef.current.suspicious_events.push({ type: 'multiple_faces', time: new Date().toISOString(), detail: `${faces} people detected` });
+            }
+            
+            if (!statsRef.current.lastMultipleFacesReported || (now - statsRef.current.lastMultipleFacesReported > 10000)) {
+              statsRef.current.lastMultipleFacesReported = now;
+              API.post('/interviews/proctoring-event', {
+                candidate_id: candidateId,
+                violation_type: 'multiple_faces',
+                severity: 'high',
+                details: `${faces} people detected in camera feed`,
+                count: 1
+              }).catch(() => {});
             }
           } else {
             setRiskAlert(null);
@@ -154,6 +159,18 @@ export default function InterviewMonitor({ candidateId, onStop }) {
             if (gazeX < 0.2 || gazeX > 0.8) {
                statsRef.current.looking_away_count += 1;
                setCurrentFocus('Looking Away');
+               
+               const now = Date.now();
+               if (!statsRef.current.lastLookingAwayReported || (now - statsRef.current.lastLookingAwayReported > 15000)) {
+                 statsRef.current.lastLookingAwayReported = now;
+                 API.post('/interviews/proctoring-event', {
+                   candidate_id: candidateId,
+                   violation_type: 'looking_away',
+                   severity: 'medium',
+                   details: 'Candidate looking away from screen',
+                   count: 1
+                 }).catch(() => {});
+               }
             } else {
                setCurrentFocus('Stable');
             }
@@ -176,6 +193,18 @@ export default function InterviewMonitor({ candidateId, onStop }) {
                  statsRef.current.suspicious_events = statsRef.current.suspicious_events || [];
                  if (!statsRef.current.suspicious_events.some(e => e.type === 'looking_away_repeatedly')) {
                     statsRef.current.suspicious_events.push({ type: 'looking_away_repeatedly', time: new Date().toISOString() });
+                 }
+                 
+                 const now = Date.now();
+                 if (!statsRef.current.lastGazeReported || (now - statsRef.current.lastGazeReported > 15000)) {
+                   statsRef.current.lastGazeReported = now;
+                   API.post('/interviews/proctoring-event', {
+                     candidate_id: candidateId,
+                     violation_type: 'looking_away',
+                     severity: 'medium',
+                     details: 'Candidate looking away from screen repeatedly',
+                     count: 1
+                   }).catch(() => {});
                  }
              }
           }

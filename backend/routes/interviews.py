@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from database import candidates_col, interview_sessions_col
@@ -69,7 +69,7 @@ async def schedule_interview(
     interview_data["secure_token"] = secure_token
     interview_data["meeting_link"] = meeting_link
     interview_data["status"] = "scheduled"
-    interview_data["scheduled_at"] = datetime.utcnow()
+    interview_data["scheduled_at"] = datetime.now(timezone.utc)
     interview_data["scheduled_by"] = current_user.get("email")
     interview_data["recruiter_email"] = current_user.get("email")  # Stored for scheduler reminders
 
@@ -80,7 +80,7 @@ async def schedule_interview(
             "pipeline_stage": "interview_scheduled",
             "interview": interview_data,
             "scheduled_by_email": current_user.get("email"),  # top-level for easy querying
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.now(timezone.utc),
         }},
     )
 
@@ -277,7 +277,7 @@ async def record_proctoring_event(violation: ProctoringViolation):
         "severity": violation.severity,
         "details": violation.details,
         "count": violation.count,
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.now(timezone.utc),
     }
 
     await candidates_col.update_one(
@@ -436,7 +436,7 @@ async def start_interview(
             }
 
     session_id = str(uuid.uuid4())
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
     
     # Store session state in interview_sessions collection
     session_doc = {
@@ -466,7 +466,7 @@ async def start_interview(
             "interview.start_time": start_time,
             "interview.recruiter_joined": True,
             "interview.candidate_joined": True,
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.now(timezone.utc)
         }}
     )
     
@@ -486,7 +486,7 @@ async def end_interview(
         "meeting_status": "LIVE"
     })
     
-    end_time = datetime.utcnow()
+    end_time = datetime.now(timezone.utc)
     duration_secs = 0.0
     if session:
         duration_secs = (end_time - session["start_time"]).total_seconds()
@@ -514,7 +514,7 @@ async def end_interview(
             "interview.status": "completed",
             "interview.end_time": end_time,
             "interview.duration_seconds": duration_secs,
-            "updated_at": datetime.utcnow()
+            "updated_at": datetime.now(timezone.utc)
         }}
     )
     
@@ -550,7 +550,7 @@ async def add_face_stats(stats: FaceStatsCreate):
         "smiling_count": stats.smiling_count or 0,
         "talking_count": stats.talking_count or 0,
         "anxious_count": stats.anxious_count or 0,
-        "timestamp": datetime.utcnow()
+        "timestamp": datetime.now(timezone.utc)
     }
     
     # Appends new face stats reading to the candidate doc

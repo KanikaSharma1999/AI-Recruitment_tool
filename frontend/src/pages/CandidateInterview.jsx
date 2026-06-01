@@ -78,6 +78,21 @@ export default function CandidateInterview() {
     document.head.appendChild(script);
   }, []);
 
+  const reportViolation = async (type, severity, details) => {
+    if (!candidateData?.candidate_id) return;
+    try {
+      await API.post('/interviews/proctoring-event', {
+        candidate_id: candidateData.candidate_id,
+        violation_type: type,
+        severity,
+        details,
+        count: 1,
+      });
+    } catch (err) {
+      console.error('Failed to report proctoring event:', err);
+    }
+  };
+
   const requestFullscreen = () => {
     const element = document.documentElement;
     if (element.requestFullscreen) {
@@ -105,6 +120,7 @@ export default function CandidateInterview() {
       setIsFullscreen(isCurrentlyFullscreen);
 
       if (!isCurrentlyFullscreen && candidateData) {
+        reportViolation('fullscreen_exit', 'high', 'Exited fullscreen mode');
         API.post('/interviews/face-stats', {
           candidate_id: candidateData.candidate_id,
           looking_away_count: 0,
@@ -158,6 +174,7 @@ export default function CandidateInterview() {
         toast.error('Security violation: Key shortcut blocked.');
 
         if (candidateData) {
+          reportViolation('copy_paste', 'low', `Attempted keyboard shortcut: ${e.key}`);
           API.post('/interviews/face-stats', {
             candidate_id: candidateData.candidate_id,
             looking_away_count: 0,
@@ -186,11 +203,13 @@ export default function CandidateInterview() {
 
     const handleCopy = (e) => {
       e.preventDefault();
+      reportViolation('copy_paste', 'low', 'Copy attempt blocked');
       toast.error('Copy function disabled.');
     };
 
     const handlePaste = (e) => {
       e.preventDefault();
+      reportViolation('copy_paste', 'low', 'Paste attempt blocked');
       toast.error('Paste function disabled.');
     };
 
@@ -201,6 +220,7 @@ export default function CandidateInterview() {
 
     const handleBlur = () => {
       if (candidateData) {
+        reportViolation('tab_switch', 'high', 'Candidate switched tabs or lost focus');
         API.post('/interviews/face-stats', {
           candidate_id: candidateData.candidate_id,
           looking_away_count: 0,

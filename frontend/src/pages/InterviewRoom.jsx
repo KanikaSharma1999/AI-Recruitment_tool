@@ -7,62 +7,15 @@ import Navbar from '../components/Navbar';
 import { MdWarning, MdShield, MdVideocam, MdMicOff, MdStop,
          MdFullscreen, MdBarChart, MdPerson, MdTimer } from 'react-icons/md';
 
-// ── Proctoring Hook ────────────────────────────────────────────────────────────
-function useProctoring({ candidateId, isLive, onViolation }) {
-  const counts = useRef({ tab_switch: 0, fullscreen_exit: 0, window_blur: 0, copy_paste: 0 });
-  const violations = useRef([]);
+// ── Timezone-Aware Timestamp Formatter ──────────────────────────────────────────
+const formatTimestamp = (ts) => {
+  if (!ts) return 'Recent';
+  const str = ts.toString();
+  const hasTimezone = str.endsWith('Z') || str.includes('+') || str.includes('GMT');
+  const dateObj = new Date(hasTimezone ? str : str + 'Z');
+  return dateObj.toLocaleTimeString();
+};
 
-  const report = useCallback(async (type, severity = 'medium', details = '') => {
-    const event = { type, severity, details, time: new Date().toLocaleTimeString() };
-    violations.current = [event, ...violations.current].slice(0, 30);
-    counts.current[type] = (counts.current[type] || 0) + 1;
-    onViolation?.(event, { ...counts.current });
-
-    if (!candidateId || !isLive) return;
-    try {
-      await API.post('/interviews/proctoring-event', {
-        candidate_id: candidateId,
-        violation_type: type,
-        severity,
-        details,
-        count: 1,
-      });
-    } catch (_) {}
-  }, [candidateId, isLive, onViolation]);
-
-  useEffect(() => {
-    if (!isLive) return;
-
-    const onVisChange = () => {
-      if (document.hidden) report('tab_switch', 'high', 'Candidate switched or minimized tab');
-    };
-    const onBlur = () => report('window_blur', 'medium', 'Browser window lost focus');
-    const onCopy = (e) => { e.preventDefault(); report('copy_paste', 'low', 'Copy attempt blocked'); };
-    const onPaste = (e) => { e.preventDefault(); report('copy_paste', 'low', 'Paste attempt blocked'); };
-    const onFSChange = () => {
-      if (!document.fullscreenElement) report('fullscreen_exit', 'high', 'Exited fullscreen mode');
-    };
-    const onCtxMenu = (e) => e.preventDefault();
-
-    document.addEventListener('visibilitychange', onVisChange);
-    window.addEventListener('blur', onBlur);
-    document.addEventListener('copy', onCopy);
-    document.addEventListener('paste', onPaste);
-    document.addEventListener('fullscreenchange', onFSChange);
-    document.addEventListener('contextmenu', onCtxMenu);
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisChange);
-      window.removeEventListener('blur', onBlur);
-      document.removeEventListener('copy', onCopy);
-      document.removeEventListener('paste', onPaste);
-      document.removeEventListener('fullscreenchange', onFSChange);
-      document.removeEventListener('contextmenu', onCtxMenu);
-    };
-  }, [isLive, report]);
-
-  return { violations: violations.current, counts: counts.current };
-}
 
 // ── Violation Banner ───────────────────────────────────────────────────────────
 function ViolationBanner({ violations }) {
@@ -362,16 +315,7 @@ export default function InterviewRoom() {
     return () => clearInterval(t);
   }, [sessionStarted, candidateId]);
 
-  const handleViolation = useCallback((event, newCounts) => {
-    setViolations(prev => [event, ...prev].slice(0, 30));
-    setCounts({ ...newCounts });
-  }, []);
 
-  const { violations: procViolations, counts: procCounts } = useProctoring({
-    candidateId,
-    isLive: sessionStarted,
-    onViolation: handleViolation,
-  });
 
   // Fetch candidate
   useEffect(() => {
@@ -434,8 +378,6 @@ export default function InterviewRoom() {
       });
       setSessionId(res.data.session_id);
       setSessionStarted(true);
-      // Request fullscreen
-      document.documentElement.requestFullscreen?.().catch(() => {});
       toast.success('Interview session started');
     } catch (err) {
       const msg = err.response?.data?.detail || 'Failed to start session';
@@ -850,7 +792,7 @@ export default function InterviewRoom() {
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
                       <span style={{ textTransform: 'capitalize' }}>{v.violation_type?.replace('_', ' ') || v.type}</span>
-                      <span style={{ fontSize: '10px', opacity: 0.8 }}>{v.timestamp ? new Date(v.timestamp).toLocaleTimeString() : 'Recent'}</span>
+                      <span style={{ fontSize: '10px', opacity: 0.8 }}>{formatTimestamp(v.timestamp)}</span>
                     </div>
                     {v.details && <div style={{ fontSize: '10.5px', opacity: 0.9 }}>{v.details}</div>}
                   </div>
