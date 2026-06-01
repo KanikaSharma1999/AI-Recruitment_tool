@@ -38,7 +38,7 @@ class JobCreate(BaseModel):
 
 
 class StatusUpdate(BaseModel):
-    status: str  # applied | screening | shortlisted | interview_scheduled | interviewed | selected | rejected | on_hold
+    status: str  # applied | screening | shortlisted | interview_scheduled | interview_completed | offered | hired | rejected
 
 
 class InterviewSchedule(BaseModel):

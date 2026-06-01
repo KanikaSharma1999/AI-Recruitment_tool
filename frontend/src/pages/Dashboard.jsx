@@ -1,29 +1,28 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
-import Navbar from '../components/Navbar';
 import API from '../api/client';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, FunnelChart, Funnel, LabelList, CartesianGrid, Cell,
-} from 'recharts';
+import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 import {
   MdPeople, MdThumbUp, MdCalendarToday, MdCheckCircle,
-  MdTrendingUp, MdAutoAwesome, MdWarning,
+  MdTrendingUp, MdAutoAwesome, MdWarning, MdWork, MdCompare,
+  MdSearch, MdNotifications, MdChatBubbleOutline, MdMoreVert
 } from 'react-icons/md';
 import { requestNotificationPermission, checkAndNotifyInterviews } from '../components/NotificationService';
 
-// ── Stat card config ───────────────────────────────────────────────────────────
-const STAT_CONFIG = [
-  { key: 'total',               label: 'Total Candidates',  icon: <MdPeople />,       accent: '#6366f1', bg: '#ede9fe', textColor: '#4f46e5' },
-  { key: 'screening',           label: 'In Screening',      icon: <MdTrendingUp />,   accent: '#f59e0b', bg: '#fef3c7', textColor: '#d97706' },
-  { key: 'shortlisted',         label: 'Shortlisted',       icon: <MdThumbUp />,      accent: '#10b981', bg: '#d1fae5', textColor: '#059669' },
-  { key: 'interview_scheduled', label: 'Interviews',        icon: <MdCalendarToday />,accent: '#3b82f6', bg: '#dbeafe', textColor: '#2563eb' },
-  { key: 'selected',            label: 'Selected',          icon: <MdCheckCircle />,  accent: '#8b5cf6', bg: '#ede9fe', textColor: '#7c3aed' },
-];
-
 // ── Interview status computed live from datetime_iso ─────────────────────────
-// JOIN WINDOW: scheduled_time → scheduled_time + 60 minutes
-function computeInterviewStatus(datetimeIso) {
+function computeInterviewStatus(datetimeIso, itemStatus) {
+  if (itemStatus === 'completed') {
+    return { status: 'completed', label: 'Completed', minutesUntil: null };
+  }
+  if (itemStatus === 'live') {
+    return { status: 'live', label: 'Live Now', minutesUntil: 0 };
+  }
+  if (itemStatus === 'missed' || itemStatus === 'overdue') {
+    return { status: 'missed', label: 'Missed', minutesUntil: null };
+  }
+
   if (!datetimeIso) return { status: 'upcoming', label: 'Upcoming', minutesUntil: null };
   const now = Date.now();
   const start = new Date(datetimeIso).getTime();
@@ -42,176 +41,52 @@ function computeInterviewStatus(datetimeIso) {
 }
 
 const STATUS_STYLE = {
-  missed:   { color: '#ef4444', bg: '#fee2e2', icon: '❌', joinable: false },
-  live:     { color: '#10b981', bg: '#d1fae5', icon: '🟢', joinable: true  },
-  imminent: { color: '#f59e0b', bg: '#fef3c7', icon: '⚡', joinable: true  },
-  today:    { color: '#f59e0b', bg: '#fef3c7', icon: '🟡', joinable: true  },
-  tomorrow: { color: '#3b82f6', bg: '#dbeafe', icon: '📅', joinable: false },
-  upcoming: { color: '#6366f1', bg: '#ede9fe', icon: '🔵', joinable: false },
-  completed:{ color: '#10b981', bg: '#d1fae5', icon: '✅', joinable: false },
-  cancelled:{ color: '#94a3b8', bg: '#f1f5f9', icon: '⚫', joinable: false },
+  missed:   { color: '#ef4444', bg: '#fee2e2', icon: '', joinable: false },
+  live:     { color: '#10b981', bg: '#d1fae5', icon: '', joinable: true  },
+  imminent: { color: '#3b82f6', bg: '#dbeafe', icon: '', joinable: true  },
+  today:    { color: '#3b82f6', bg: '#dbeafe', icon: '', joinable: true  },
+  tomorrow: { color: '#3b82f6', bg: '#dbeafe', icon: '', joinable: false },
+  upcoming: { color: '#3b82f6', bg: '#dbeafe', icon: '', joinable: false },
+  completed:{ color: '#475569', bg: '#f1f5f9', icon: '', joinable: false },
+  cancelled:{ color: '#94a3b8', bg: '#f1f5f9', icon: '', joinable: false },
 };
 
-// ── Candidate status → color lookup ───────────────────────────────────────────
-const candidateStatusColor = (status) => {
-  const s = (status || '').toLowerCase();
-  if (s.includes('selected') || s.includes('completed') || s.includes('attended'))
-    return { bg: '#d1fae5', color: '#059669' };
-  if (s.includes('interview_scheduled'))
-    return { bg: '#dbeafe', color: '#2563eb' };
-  if (s.includes('shortlisted'))
-    return { bg: '#d1fae5', color: '#059669' };
-  if (s.includes('missed') || s.includes('rejected') || s.includes('overdue'))
-    return { bg: '#fee2e2', color: '#ef4444' };
-  if (s.includes('on_hold'))
-    return { bg: '#fef3c7', color: '#d97706' };
-  return { bg: '#f1f5f9', color: '#64748b' };
-};
-
-// ── AI Insight Banner ─────────────────────────────────────────────────────────
-function AIInsightBanner({ stats }) {
-  if (!stats) return null;
-  const shortlisted = stats.shortlisted || 0;
-  const interviews  = stats.interview_scheduled || 0;
-  const selected    = stats.selected || 0;
-  const total       = stats.total || 0;
-  const avgScore    = stats.avg_score || 0;
-
-  let insight, color, bg, border;
-  if (shortlisted > 0 && interviews === 0) {
-    insight = `🎯 ${shortlisted} candidate${shortlisted > 1 ? 's are' : ' is'} shortlisted and ready for interview scheduling.`;
-    color = '#059669'; bg = 'linear-gradient(135deg, #f0fdf4, #ecfdf5)'; border = '#6ee7b7';
-  } else if (interviews > 0) {
-    insight = `📅 ${interviews} interview${interviews > 1 ? 's are' : ' is'} scheduled. ${selected > 0 ? `${selected} candidate(s) already selected.` : 'Follow up with the pipeline.'}`;
-    color = '#2563eb'; bg = 'linear-gradient(135deg, #eff6ff, #dbeafe)'; border = '#93c5fd';
-  } else if (total === 0) {
-    insight = '🚀 Get started — upload resumes and run AI ranking to see hiring insights here.';
-    color = '#6366f1'; bg = 'linear-gradient(135deg, #faf5ff, #ede9fe)'; border = '#c4b5fd';
-  } else if (avgScore > 65) {
-    insight = `⭐ Strong pipeline! Average AI match is ${avgScore.toFixed(1)}% — approximately ${Math.round(total * 0.3)} candidates likely qualify for shortlisting.`;
-    color = '#7c3aed'; bg = 'linear-gradient(135deg, #faf5ff, #ede9fe)'; border = '#c4b5fd';
-  } else {
-    insight = `📊 ${total} candidate${total > 1 ? 's' : ''} in pipeline. Run ranking to generate AI hiring recommendations and scores.`;
-    color = '#6366f1'; bg = 'linear-gradient(135deg, #eff6ff, #eef2ff)'; border = '#bfdbfe';
-  }
-
-  return (
-    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12, padding: '14px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
-      <div style={{ width: 36, height: 36, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <MdAutoAwesome style={{ color: '#fff', fontSize: 18 }} />
-      </div>
-      <div style={{ fontSize: 13.5, fontWeight: 500, color: '#1e293b', flex: 1 }}>{insight}</div>
-      <div style={{ fontSize: 11, color: color, fontWeight: 700, whiteSpace: 'nowrap' }}>AI INSIGHT</div>
-    </div>
-  );
-}
-
-// ── Interview Card — ticks every second, auto-expires after 1 hour ────────────
-function InterviewCard({ item }) {
-  const [live, setLive] = useState(() => computeInterviewStatus(item.datetime_iso));
-
-  // Re-compute every 30 seconds so status auto-updates without full page reload
-  useEffect(() => {
-    const t = setInterval(() => setLive(computeInterviewStatus(item.datetime_iso)), 30000);
-    return () => clearInterval(t);
-  }, [item.datetime_iso]);
-
-  const style   = STATUS_STYLE[live.status] || STATUS_STYLE.upcoming;
-  const isMissed = live.status === 'missed';
-  const isLive   = live.status === 'live' || live.status === 'imminent';
-
-  return (
-    <div style={{
-      padding: 16, borderRadius: 14, background: '#fff',
-      border: `1.5px solid ${isMissed ? '#fecaca' : isLive ? '#6ee7b7' : '#f1f5f9'}`,
-      boxShadow: isMissed ? '0 0 0 3px rgba(239,68,68,0.08)' : isLive ? '0 0 0 3px rgba(16,185,129,0.1)' : '0 2px 8px rgba(0,0,0,0.04)',
-      position: 'relative',
-    }}>
-      {/* Live pulse for active interviews */}
-      {isLive && (
-        <div style={{ position: 'absolute', top: 14, left: 14, width: 8, height: 8, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 0 3px rgba(16,185,129,0.3)', animation: 'pulse 1.5s infinite' }} />
-      )}
-
-      {/* Status Badge */}
-      <div style={{ position: 'absolute', top: 12, right: 12 }}>
-        <span style={{
-          padding: '3px 9px', borderRadius: 999, fontSize: 10, fontWeight: 800,
-          background: style.bg, color: style.color, textTransform: 'uppercase', letterSpacing: '0.5px',
-        }}>
-          {style.icon} {live.label}
-        </span>
-      </div>
-
-      <div style={{ fontSize: 13, fontWeight: 800, color: '#1e293b', marginBottom: 2, paddingRight: 90, paddingLeft: isLive ? 20 : 0 }}>
-        {item.candidate_name}
-      </div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginBottom: 12 }}>{item.job_title}</div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: style.color, fontWeight: 700, marginBottom: 10 }}>
-        <div style={{ width: 26, height: 26, borderRadius: 7, background: style.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          {isMissed ? <MdWarning size={13} /> : <MdCalendarToday size={13} />}
-        </div>
-        {item.date} {item.time && `at ${item.time}`}
-      </div>
-
-      {/* Action buttons — context-aware */}
-      {isMissed ? (
-        <button
-          style={{ width: '100%', padding: '8px 0', fontSize: 11, background: '#fee2e2', color: '#ef4444', borderRadius: 8, fontWeight: 700, border: '1px solid #fecaca', cursor: 'pointer' }}
-          onClick={() => (window.location.href = `/candidates/${item.id}`)}
-        >
-          ❌ Interview Expired — Review Profile
-        </button>
-      ) : style.joinable ? (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            style={{ flex: 1.5, padding: '8px 0', fontSize: 11, background: isLive ? '#10b981' : '#f59e0b', color: '#fff', borderRadius: 8, fontWeight: 700, border: 'none', cursor: item.link ? 'pointer' : 'not-allowed', opacity: item.link ? 1 : 0.5 }}
-            onClick={() => item.link && window.open(item.link, '_blank')}
-            disabled={!item.link}
-          >
-            {isLive ? '🟢 Join Now' : `⚡ ${live.label}`}
-          </button>
-          <button
-            style={{ flex: 1, padding: '8px 0', fontSize: 11, background: '#f8fafc', color: '#475569', borderRadius: 8, fontWeight: 600, border: '1px solid #e2e8f0', cursor: 'pointer' }}
-            onClick={() => (window.location.href = `/candidates/${item.id}`)}
-          >
-            Profile
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            style={{ flex: 1.5, padding: '8px 0', fontSize: 11, background: '#f1f5f9', color: '#94a3b8', borderRadius: 8, fontWeight: 600, border: '1px solid #e2e8f0', cursor: 'not-allowed' }}
-            disabled
-          >
-            {live.label}
-          </button>
-          <button
-            style={{ flex: 1, padding: '8px 0', fontSize: 11, background: '#f8fafc', color: '#475569', borderRadius: 8, fontWeight: 600, border: '1px solid #e2e8f0', cursor: 'pointer' }}
-            onClick={() => (window.location.href = `/candidates/${item.id}`)}
-          >
-            Profile
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
   const [stats, setStats] = useState(null);
   const [jobs, setJobs] = useState([]);
+  const [allCandidates, setAllCandidates] = useState([]);
   const [topCandidates, setTopCandidates] = useState([]);
   const [selJob, setSelJob] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // Custom navbar header states
+  const [dashboardSearch, setDashboardSearch] = useState('');
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notifs, setNotifs] = useState([]);
+
+  // Interactive pending actions list
+  const [pendingApprovals, setPendingApprovals] = useState([
+    { id: 1, title: 'Verify Skiran\'s Proctoring Log', subtitle: 'Potential tab-switch alert', priority: 'High', priorityColor: '#ef4444', priorityBg: '#fee2e2', requester: 'AI Proctor', time: '2 hours ago' },
+    { id: 2, title: 'Complete Behavioral Analysis', subtitle: 'Emma Davis — Interview finished', priority: 'Medium', priorityColor: '#f59e0b', priorityBg: '#fef3c7', requester: 'Skype Bot', time: '4 hours ago' },
+    { id: 3, title: 'Review Archana\'s Skill Gaps', subtitle: 'React/Python developer matching', priority: 'Low', priorityColor: '#10b981', priorityBg: '#d1fae5', requester: 'HireIQ Copilot', time: '1 day ago' },
+  ]);
+
   useEffect(() => {
-    API.get('/jobs/list').then(r => setJobs(r.data)).catch(() => {});
+    API.get('/jobs/list').then(r => setJobs(r.data || [])).catch(() => {});
     API.get('/candidates/list').then(r => {
-      const sorted = [...(r.data || [])].sort((a, b) => (b.score || 0) - (a.score || 0));
+      setAllCandidates(r.data || []);
+      const sorted = [...(r.data || [])].sort((a, b) => {
+        const scoreA = a.ai_match_score !== undefined && a.ai_match_score !== null ? a.ai_match_score : (a.score || 0);
+        const scoreB = b.ai_match_score !== undefined && b.ai_match_score !== null ? b.ai_match_score : (b.score || 0);
+        return scoreB - scoreA;
+      });
       setTopCandidates(sorted.slice(0, 4));
     }).catch(() => {});
+
+    API.get('/notifications/recent').then(r => setNotifs(r.data || [])).catch(() => {});
     requestNotificationPermission();
   }, []);
 
@@ -229,225 +104,512 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchStats();
-    const t = setInterval(fetchStats, 60000); // refresh every minute for countdown accuracy
+    const t = setInterval(fetchStats, 60000);
     return () => clearInterval(t);
   }, [selJob]);
 
-  const funnelData = stats
-    ? [
-        { name: 'Total Applied', value: stats.total || 0, fill: '#6366f1' },
-        { name: 'Screening',     value: stats.screening || 0, fill: '#3b82f6' },
-        { name: 'Shortlisted',   value: stats.shortlisted || 0, fill: '#10b981' },
-        { name: 'Interviews',    value: (stats.interview_scheduled || 0) + (stats.interviewed || 0), fill: '#8b5cf6' },
-        { name: 'Selected',      value: stats.selected || 0, fill: '#f59e0b' },
-      ].filter(d => d.value > 0)
-    : [];
+  const getGreeting = () => {
+    const hr = new Date().getHours();
+    if (hr < 12) return 'Good Morning';
+    if (hr < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
 
-  const overdueCount = (stats?.upcoming_interviews || []).filter(
-    i => i.interview_status === 'overdue' || i.interview_status === 'missed'
-  ).length;
+  const getWeeklyDays = () => {
+    const days = [];
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const now = new Date();
+    // Generate week starting 3 days ago up to 3 days from now
+    for (let i = -3; i <= 3; i++) {
+      const d = new Date();
+      d.setDate(now.getDate() + i);
+      days.push({
+        dayName: weekdays[d.getDay()],
+        dayNum: d.getDate(),
+        isToday: i === 0,
+      });
+    }
+    return days;
+  };
+
+  const handleResolveApproval = (id, approved, title) => {
+    setPendingApprovals(prev => prev.filter(item => item.id !== id));
+    if (approved) {
+      toast.success(`Action Approved: ${title}`);
+    } else {
+      toast.error(`Action Dismissed: ${title}`);
+    }
+  };
+
+  const getDaysOpen = (job) => {
+    if (!job.posted_at && !job.created_at) return '12d';
+    const postDate = new Date(job.posted_at || job.created_at);
+    const diffTime = Math.abs(new Date() - postDate);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return `${diffDays}d`;
+  };
+
+  // Metrics configurations matching user image style
+  const dashboardMetrics = [
+    { label: 'Total Jobs', value: jobs.length, trend: '+3 this week', positive: true, icon: <MdWork style={{ fontSize: 20, color: '#6366f1' }} /> },
+    { label: 'Active Applicants', value: stats?.total || 0, trend: '+12 today', positive: true, icon: <MdPeople style={{ fontSize: 20, color: '#10b981' }} /> },
+    { label: 'Interviews Scheduled', value: stats?.interview_scheduled || 0, trend: '+2 this week', positive: true, icon: <MdCalendarToday style={{ fontSize: 20, color: '#3b82f6' }} /> },
+    { label: 'Successful Hires', value: stats?.hired || 0, trend: '+3 this month', positive: true, icon: <MdCheckCircle style={{ fontSize: 20, color: '#8b5cf6' }} /> },
+  ];
+
+  const quickActions = [
+    { title: 'New Job', desc: 'Create a new job posting', icon: <MdWork style={{ color: '#6366f1', fontSize: 18 }} />, path: '/jobs' },
+    { title: 'New Applicant', desc: 'Add a new candidate', icon: <MdPeople style={{ color: '#10b981', fontSize: 18 }} />, path: '/upload' },
+    { title: 'Schedule Interview', desc: 'Set up an interview', icon: <MdCalendarToday style={{ color: '#3b82f6', fontSize: 18 }} />, path: '/candidates' },
+    { title: 'Compare Resumes', desc: 'AI resume comparison', icon: <MdCompare style={{ color: '#8b5cf6', fontSize: 18 }} />, path: '/compare' },
+  ];
 
   return (
     <div className="layout">
       <Sidebar />
-      <div className="main-content">
-        <Navbar title="Dashboard" />
-        <div className="page-body animate-fade">
-
-          {/* ── Header ──────────────────────────────────────────────────── */}
-          <div className="flex-between page-header" style={{ marginBottom: 24 }}>
-            <div>
-              <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1e293b' }}>Recruitment Command Center</h1>
-              <p style={{ color: '#64748b', fontSize: 14 }}>Real-time intelligence and pipeline management</p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <select
-                className="form-select"
-                style={{ width: 220, fontSize: 13, borderRadius: 10, border: '1px solid #e2e8f0' }}
-                value={selJob}
-                onChange={e => setSelJob(e.target.value)}
-              >
-                <option value="">All Roles</option>
-                {jobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
-              </select>
-              <button className="btn btn-outline btn-sm" style={{ borderRadius: 10 }} onClick={fetchStats}>
-                ↻ Refresh
-              </button>
-            </div>
+      <div className="main-content" style={{ display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
+        
+        {/* ── Custom Header Bar (Ashby Style) ────────────────────────────────── */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '20px 32px',
+          borderBottom: '1px solid #e2e8f0',
+          background: '#ffffff',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+        }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {getGreeting()}, {user?.name || 'Recruiter'}! 👋
+            </h1>
+            <p style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
+              Here's what's happening with your hiring pipeline today
+            </p>
           </div>
 
-          {/* ── AI Insight Banner ────────────────────────────────────────── */}
-          <AIInsightBanner stats={stats} />
+          {/* Center search bar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: 9999,
+            padding: '8px 16px',
+            width: 320,
+            cursor: 'text',
+          }} onClick={() => document.getElementById('dashboard-search-input')?.focus()}>
+            <MdSearch style={{ color: '#94a3b8', fontSize: 18 }} />
+            <input
+              id="dashboard-search-input"
+              type="text"
+              placeholder="Search..."
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                fontSize: 13,
+                width: '100%',
+                color: '#1e293b',
+              }}
+              value={dashboardSearch}
+              onChange={e => setDashboardSearch(e.target.value)}
+            />
+            <span style={{
+              fontSize: 10,
+              color: '#94a3b8',
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: 4,
+              padding: '2px 6px',
+              fontWeight: 700,
+              whiteSpace: 'nowrap',
+            }}>
+              Ctrl + K
+            </span>
+          </div>
 
-          {/* ── Main Grid ───────────────────────────────────────────────── */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24 }}>
+          {/* Right actions and Profile info */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <button className="btn-icon" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                <MdChatBubbleOutline size={20} />
+              </button>
+              
+              <div style={{ position: 'relative' }}>
+                <button 
+                  className="btn-icon" 
+                  onClick={() => setShowNotifs(!showNotifs)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', position: 'relative', display: 'flex', alignItems: 'center' }}
+                >
+                  <MdNotifications size={22} />
+                  {notifs.filter(n => !n.read).length > 0 && (
+                    <span style={{ 
+                      position: 'absolute', top: 0, right: 0, width: 8, height: 8, 
+                      background: '#ef4444', borderRadius: '50%', border: '1.5px solid #fff' 
+                    }} />
+                  )}
+                </button>
 
-            {/* Left column */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-
-              {/* Stat Cards */}
-              <div className="stats-grid">
-                {STAT_CONFIG.map(({ key, label, icon, accent, bg, textColor }) => (
-                  <div className="stat-card" key={key} style={{ '--stat-accent': accent, borderRadius: 16 }}>
-                    <div className="stat-icon" style={{ background: bg, color: textColor }}>{icon}</div>
-                    <div className="stat-info">
-                      <div className="stat-label">{label}</div>
-                      <div className="stat-value" style={{ color: textColor }}>
-                        {loading ? <span style={{ fontSize: 20, color: '#d1d5db' }}>—</span> : (stats?.[key] ?? 0)}
-                      </div>
+                {showNotifs && (
+                  <div className="card" style={{ 
+                    position: 'absolute', top: 35, right: 0, width: 300, zIndex: 100, 
+                    padding: 0, overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0',
+                    background: '#ffffff'
+                  }}>
+                    <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                      RECENT NOTIFICATIONS
+                    </div>
+                    <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                      {notifs.length > 0 ? notifs.map(n => (
+                        <div key={n.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', background: n.read ? '#fff' : '#f0f9ff' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: n.type === 'security' ? '#ef4444' : '#6366f1', marginBottom: 2 }}>
+                            {n.type.toUpperCase()}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#1e293b', lineHeight: 1.4 }}>{n.message}</div>
+                          <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>{n.time}</div>
+                        </div>
+                      )) : (
+                        <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 11 }}>No new notifications</div>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-
-              {/* Charts Row */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-                {/* Pipeline Funnel */}
-                <div className="card" style={{ borderRadius: 16 }}>
-                  <h3 style={{ fontSize: 13, fontWeight: 800, color: '#475569', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#6366f1' }} />
-                    Pipeline Funnel
-                  </h3>
-                  <div style={{ height: 260 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <FunnelChart>
-                        <Tooltip contentStyle={{ borderRadius: 10, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} />
-                        <Funnel dataKey="value" data={funnelData} isAnimationActive>
-                          <LabelList position="right" fill="#64748b" stroke="none" dataKey="name" style={{ fontSize: 10, fontWeight: 600 }} />
-                          {funnelData.map((entry, idx) => <Cell key={idx} fill={entry.fill} />)}
-                        </Funnel>
-                      </FunnelChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Score Distribution */}
-                <div className="card" style={{ borderRadius: 16 }}>
-                  <h3 style={{ fontSize: 13, fontWeight: 800, color: '#475569', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                    Score Distribution
-                  </h3>
-                  <div style={{ height: 260 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={stats?.score_distribution || []}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                        <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: 10, border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }} />
-                        <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={32} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              </div>
-
-              {/* Top Candidates Table */}
-              <div className="card" style={{ borderRadius: 16 }}>
-                <div className="flex-between" style={{ marginBottom: 20 }}>
-                  <h3 style={{ fontSize: 13, fontWeight: 800, color: '#475569', display: 'flex', alignItems: 'center', gap: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    <MdTrendingUp style={{ color: '#f59e0b' }} /> High-Potential Candidates
-                  </h3>
-                  <a href="/candidates" style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', textDecoration: 'none' }}>VIEW ALL →</a>
-                </div>
-                <div className="table-responsive">
-                  <table className="table" style={{ fontSize: 13 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ color: '#94a3b8', fontWeight: 600, fontSize: 11 }}>CANDIDATE</th>
-                        <th style={{ color: '#94a3b8', fontWeight: 600, fontSize: 11 }}>AI MATCH</th>
-                        <th style={{ color: '#94a3b8', fontWeight: 600, fontSize: 11 }}>STATUS</th>
-                        <th style={{ color: '#94a3b8', fontWeight: 600, fontSize: 11 }}>ACTION</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topCandidates.map(c => {
-                        const sc = candidateStatusColor(c.status);
-                        return (
-                          <tr key={c.id}>
-                            <td>
-                              <div style={{ fontWeight: 700, color: '#1e293b' }}>{c.name}</div>
-                              <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.email}</div>
-                            </td>
-                            <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <div style={{ width: 60, height: 6, background: '#f1f5f9', borderRadius: 3, overflow: 'hidden' }}>
-                                  <div style={{ width: `${c.score}%`, height: '100%', background: 'linear-gradient(90deg, #6366f1, #8b5cf6)', borderRadius: 3 }} />
-                                </div>
-                                <span style={{ fontSize: 12, fontWeight: 800, color: '#6366f1' }}>{Math.round(c.score)}%</span>
-                              </div>
-                            </td>
-                            <td>
-                              <span style={{ padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', background: sc.bg, color: sc.color }}>
-                                {(c.status || '').replace(/_/g, ' ')}
-                              </span>
-                            </td>
-                            <td>
-                              <button className="btn btn-sm btn-outline" style={{ borderRadius: 8, fontSize: 11 }} onClick={() => (window.location.href = `/candidates/${c.id}`)}>
-                                View
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                )}
               </div>
             </div>
 
-            {/* ── Right Sidebar: Interview Sessions ──────────────────────── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-              <div className="card" style={{ padding: 0, overflow: 'hidden', border: '1px solid #e2e8f0', borderRadius: 16, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
-                {/* Header */}
-                <div style={{ padding: '18px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ fontSize: 12, fontWeight: 800, color: '#475569', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '0.5px' }}>
-                    <MdCalendarToday style={{ color: '#6366f1' }} /> INTERVIEW SESSIONS
-                  </h3>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {overdueCount > 0 && (
-                      <span style={{ fontSize: 10, fontWeight: 800, background: '#ef4444', color: '#fff', padding: '2px 8px', borderRadius: 999 }}>
-                        {overdueCount} overdue
-                      </span>
-                    )}
-                    <span style={{ fontSize: 10, fontWeight: 800, background: '#6366f1', color: '#fff', padding: '2px 8px', borderRadius: 999 }}>
-                      {stats?.upcoming_interviews?.length || 0} total
-                    </span>
-                  </div>
-                </div>
-
-                {/* Interview list */}
-                <div style={{ padding: 12, maxHeight: 620, overflowY: 'auto' }} className="custom-scrollbar">
-                  {stats?.upcoming_interviews?.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {stats.upcoming_interviews.map(item => (
-                        <InterviewCard key={item.id} item={item} />
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94a3b8' }}>
-                      <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-                        <MdCalendarToday size={24} style={{ opacity: 0.3 }} />
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#475569' }}>All Clear</div>
-                      <div style={{ fontSize: 11, marginTop: 4 }}>No interviews scheduled.</div>
-                    </div>
-                  )}
-                </div>
+            {/* Profile Avatar Card */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              borderLeft: '1px solid #e2e8f0',
+              paddingLeft: 20,
+            }}>
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, var(--primary), var(--purple))',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: 14,
+              }}>
+                {(user?.name || 'A')[0].toUpperCase()}
               </div>
-
-              {/* AI Tip Card */}
-              <div className="card" style={{ background: 'linear-gradient(135deg, #1e293b, #0f172a)', color: '#fff', border: 'none', borderRadius: 16, padding: 24 }}>
-                <h3 style={{ fontSize: 11, fontWeight: 800, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  <MdAutoAwesome style={{ color: '#f59e0b' }} /> AI Hiring Tip
-                </h3>
-                <p style={{ fontSize: 13, lineHeight: 1.6, color: '#cbd5e1', fontWeight: 500 }}>
-                  Candidates who switch browser tabs more than 3 times during an interview show a 40% higher probability of information retrieval assistance.{' '}
-                  <span style={{ color: '#fbbf24', fontWeight: 700 }}>Monitor proctoring logs closely.</span>
-                </p>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>{user?.name || 'Admin'}</span>
+                <span style={{ fontSize: 10.5, color: '#64748b' }}>Senior Recruiter</span>
               </div>
             </div>
           </div>
         </div>
+
+        {/* ── Page Content (Two-Column Layout) ───────────────────────────────── */}
+        <div className="page-body animate-fade" style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 24, padding: 32 }}>
+          
+          {/* LEFT COLUMN: Metrics, Actions, Open Positions */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            
+            {/* Stat metrics */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+              {dashboardMetrics.map((m, idx) => (
+                <div className="card" key={idx} style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 120, border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>{m.label}</span>
+                    <div style={{ width: 34, height: 34, borderRadius: 8, background: '#f8fafc', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {m.icon}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 28, fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>{m.value}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: m.positive ? '#10b981' : '#ef4444', display: 'flex', alignItems: 'center' }}>
+                      {m.positive ? '↑' : '↓'} {m.trend.split(' ')[0]}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#64748b' }}>{m.trend.split(' ').slice(1).join(' ')}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick Actions Panel */}
+            <div className="card" style={{ padding: 24, border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 16 }}>⚡</span> Quick Actions
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+                {quickActions.map((a, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => navigate(a.path)}
+                    style={{
+                      padding: 16,
+                      borderRadius: 12,
+                      border: '1px solid #e2e8f0',
+                      background: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = 'var(--primary)';
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.background = '#f8fafc';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = '#e2e8f0';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.background = '#ffffff';
+                    }}
+                  >
+                    <div style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 8,
+                      background: '#eff6ff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}>
+                      {a.icon}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{a.title}</div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{a.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Open Positions list */}
+            <div className="card" style={{ padding: 24, border: '1px solid #e2e8f0' }}>
+              <div className="flex-between" style={{ marginBottom: 20 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>💼</span> Open Positions
+                </h3>
+                <button className="btn btn-outline btn-sm" onClick={() => navigate('/jobs')} style={{ fontSize: 11 }}>
+                  View All
+                </button>
+              </div>
+
+              <div className="table-responsive">
+                <table className="table" style={{ fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <th style={{ color: '#64748b', fontWeight: 600, fontSize: 11, paddingBottom: 12 }}>POSITION</th>
+                      <th style={{ color: '#64748b', fontWeight: 600, fontSize: 11, paddingBottom: 12 }}>STATUS</th>
+                      <th style={{ color: '#64748b', fontWeight: 600, fontSize: 11, paddingBottom: 12, textAlign: 'center' }}>APPLICANTS</th>
+                      <th style={{ color: '#64748b', fontWeight: 600, fontSize: 11, paddingBottom: 12, textAlign: 'center' }}>INTERVIEWS</th>
+                      <th style={{ color: '#64748b', fontWeight: 600, fontSize: 11, paddingBottom: 12, textAlign: 'center' }}>HIRES</th>
+                      <th style={{ color: '#64748b', fontWeight: 600, fontSize: 11, paddingBottom: 12, textAlign: 'right' }}>ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.length > 0 ? jobs.map((j, index) => {
+                      const jobCandidates = allCandidates.filter(c => c.job_id === j.id || c.job_id === j._id);
+                      
+                      return (
+                        <tr key={j.id || j._id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                          <td style={{ padding: '12px 0' }}>
+                            <div style={{ fontWeight: 700, color: '#0f172a' }}>{j.title}</div>
+                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{j.department || 'Engineering'}</div>
+                          </td>
+                          <td style={{ padding: '12px 0' }}>
+                            <span style={{
+                              padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+                              background: '#d1fae5', color: '#065f46', textTransform: 'uppercase'
+                            }}>
+                              Active
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 0', textAlign: 'center', fontWeight: 600, color: '#334155' }}>
+                            {jobCandidates.length}
+                          </td>
+                          <td style={{ padding: '12px 0', textAlign: 'center', fontWeight: 600, color: '#334155' }}>
+                            {jobCandidates.filter(c => ['interview_scheduled', 'interview_live'].includes(c.status)).length}
+                          </td>
+                          <td style={{ padding: '12px 0', textAlign: 'center', fontWeight: 600, color: '#334155' }}>
+                            {jobCandidates.filter(c => c.status === 'hired').length}
+                          </td>
+                          <td style={{ padding: '12px 0', textAlign: 'right' }}>
+                            <button className="btn-icon" style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => navigate('/jobs')}>
+                              <MdMoreVert size={18} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr>
+                        <td colSpan="6" style={{ padding: '40px 0', textAlign: 'center', color: '#94a3b8' }}>
+                          No jobs available. Create a new job description to begin tracking.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN: Calendar schedule, Pending alerts */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            
+            {/* Calendar widget */}
+            <div className="card" style={{ padding: 20, borderRadius: 16, border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 800, color: '#64748b', marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MdCalendarToday style={{ color: '#6366f1' }} /> Schedule
+              </h3>
+              
+              {/* Day selector strip */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 20, textAlign: 'center' }}>
+                {getWeeklyDays().map((d, i) => (
+                  <div key={i} style={{
+                    padding: '8px 4px',
+                    borderRadius: 8,
+                    background: d.isToday ? '#6366f1' : 'transparent',
+                    color: d.isToday ? '#ffffff' : '#64748b',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, opacity: d.isToday ? 0.9 : 0.7 }}>{d.dayName}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>{d.dayNum}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Schedule list */}
+              <div>
+                <h4 style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 12, letterSpacing: '0.5px' }}>Today's Schedule</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 320, overflowY: 'auto' }}>
+                  {stats?.upcoming_interviews?.length > 0 ? (
+                    stats.upcoming_interviews.map(item => {
+                      const liveStatus = computeInterviewStatus(item.datetime_iso, item.interview_status);
+                      const isLive = liveStatus.status === 'live' || liveStatus.status === 'imminent';
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            padding: '12px 14px',
+                            borderRadius: 10,
+                            background: '#ffffff',
+                            border: '1px solid #f1f5f9',
+                            borderLeft: isLive ? '4px solid #6366f1' : '4px solid #94a3b8',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                          }}
+                        >
+                          <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {item.candidate_name}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 10.5, color: '#64748b' }}>
+                              <span>{item.time || '10:00 AM'}</span>
+                              <span>•</span>
+                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.job_title}</span>
+                            </div>
+                          </div>
+                          <div>
+                            {isLive ? (
+                              <button
+                                className="btn btn-primary"
+                                style={{ padding: '4px 10px', fontSize: 11, borderRadius: 8, height: 28 }}
+                                onClick={() => (window.location.href = `/candidates/${item.id}?start=true`)}
+                              >
+                                Join
+                              </button>
+                            ) : (
+                              <span style={{
+                                fontSize: 9,
+                                fontWeight: 800,
+                                background: '#e0e7ff',
+                                color: '#4338ca',
+                                padding: '2px 8px',
+                                borderRadius: 4,
+                                textTransform: 'uppercase',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                Interview
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ padding: '20px 10px', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>
+                      No interviews scheduled.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Pending actions (approvals) */}
+            <div className="card" style={{ padding: 24, borderRadius: 16, border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: 13, fontWeight: 800, color: '#64748b', marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MdCheckCircle style={{ color: '#10b981' }} /> Pending Actions
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {pendingApprovals.length > 0 ? pendingApprovals.map(item => (
+                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f8fafc', paddingBottom: 12 }}>
+                    <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }}>{item.title}</span>
+                        <span style={{ fontSize: 9, fontWeight: 800, color: item.priorityColor, background: item.priorityBg, padding: '1px 6px', borderRadius: 4 }}>
+                          {item.priority}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 4 }}>
+                        {item.subtitle} • {item.time}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => handleResolveApproval(item.id, true, item.title)}
+                        style={{
+                          width: 26, height: 26, borderRadius: 6, border: 'none', background: '#d1fae5', color: '#059669',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 700
+                        }}
+                      >
+                        ✓
+                      </button>
+                      <button
+                        onClick={() => handleResolveApproval(item.id, false, item.title)}
+                        style={{
+                          width: 26, height: 26, borderRadius: 6, border: 'none', background: '#fee2e2', color: '#dc2626',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 700
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )) : (
+                  <div style={{ padding: '10px 0', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>
+                    🎉 All clear! No pending actions.
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
       </div>
     </div>
   );

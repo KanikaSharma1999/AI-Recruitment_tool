@@ -135,7 +135,7 @@ export default function ChatbotPanel() {
     
     try {
       const token = localStorage.getItem('ats_token');
-      const url = `${API.defaults.baseURL || 'http://localhost:8000'}/chat/stream`;
+      const url = `${API.defaults.baseURL || import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || ''}/chat/stream`;
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -195,7 +195,7 @@ export default function ChatbotPanel() {
 
   const clear = async () => {
     try { await API.delete('/chat/history'); } catch {}
-    setMessages([{ role: 'bot', text: '🔄 Conversation cleared. How can I help you?', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+    setMessages([{ role: 'bot', text: 'Conversation cleared. How can I help you?', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
     setShowPrompts(true);
   };
 
@@ -212,15 +212,27 @@ export default function ChatbotPanel() {
       {/* FAB */}
       {!open && (
         <button onClick={() => setOpen(true)} style={{
-          position: 'fixed', bottom: 24, right: 24, width: 58, height: 58,
-          background: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
-          border: 'none', borderRadius: '50%', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 8px 24px rgba(99,102,241,0.45)',
-          zIndex: 10001, animation: 'hiq-pulse 2.5s infinite',
-        }}>
-          <MdAutoAwesome style={{ fontSize: 26, color: '#fff' }} />
-          <div style={{ position: 'absolute', top: -2, right: -2, width: 14, height: 14, borderRadius: '50%', background: '#10b981', border: '2px solid #fff' }} />
+          position: 'fixed', bottom: 24, right: 24,
+          background: '#0f172a',
+          color: '#ffffff',
+          border: '1px solid #1e293b',
+          borderRadius: 9999,
+          padding: '10px 18px',
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 8,
+          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.15)',
+          zIndex: 10001,
+          transition: 'all 0.2s ease',
+          fontWeight: 600,
+          fontSize: 12.5,
+          letterSpacing: '0.3px',
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#1e293b'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = '#0f172a'; e.currentTarget.style.transform = 'translateY(0)'; }}
+        >
+          <MdAutoAwesome style={{ fontSize: 16, color: '#f59e0b' }} />
+          <span>HireIQ Copilot</span>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
         </button>
       )}
 
@@ -244,7 +256,7 @@ export default function ChatbotPanel() {
                 <MdAutoAwesome style={{ fontSize: 20, color: '#fff' }} />
               </div>
               <div>
-                <div style={{ fontWeight: 800, fontSize: 15, color: '#fff', letterSpacing: '-0.3px' }}>HireIQ Copilot</div>
+                <div style={{ fontWeight: 600, fontSize: 15, color: '#fff', letterSpacing: '-0.3px' }}>HireIQ Copilot</div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
                   Llama 3.3 70B · Context-Aware
@@ -283,7 +295,7 @@ export default function ChatbotPanel() {
             {/* Quick prompts */}
             {showPrompts && !loading && messages.length <= 2 && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.8px', marginBottom: 10, textTransform: 'uppercase' }}>Try asking</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.8px', marginBottom: 10, textTransform: 'uppercase' }}>Try asking</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                   {QUICK_PROMPTS.map(p => (
                     <button key={p.label} onClick={() => send(p.q)} style={{

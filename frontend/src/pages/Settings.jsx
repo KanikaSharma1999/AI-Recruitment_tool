@@ -11,7 +11,7 @@ import {
   MdSend, MdInfo
 } from 'react-icons/md';
 
-const API = 'http://localhost:8000';
+const API = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_BACKEND_URL || '';
 const token = () => localStorage.getItem('ats_token');
 const hdr = () => ({ Authorization: `Bearer ${token()}` });
 
@@ -20,7 +20,7 @@ const Section = ({ icon, title, subtitle, children, accent = '#6366f1' }) => (
   <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden', marginBottom: 20, boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
     <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 14, background: 'linear-gradient(135deg,#fafafa,#f8fafc)' }}>
       <div style={{ width: 40, height: 40, borderRadius: 12, background: accent + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', color: accent, fontSize: 20 }}>{icon}</div>
-      <div><div style={{ fontWeight: 800, fontSize: 15, color: '#1e293b' }}>{title}</div>{subtitle && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{subtitle}</div>}</div>
+      <div><div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b' }}>{title}</div>{subtitle && <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{subtitle}</div>}</div>
     </div>
     <div style={{ padding: 24 }}>{children}</div>
   </div>
@@ -28,7 +28,7 @@ const Section = ({ icon, title, subtitle, children, accent = '#6366f1' }) => (
 
 const Field = ({ label, children, hint }) => (
   <div style={{ marginBottom: 18 }}>
-    <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</label>
+    <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</label>
     {children}
     {hint && <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{hint}</p>}
   </div>
@@ -46,7 +46,7 @@ const Btn = ({ children, onClick, variant = 'primary', disabled, small, style = 
   const bg = variant === 'primary' ? '#6366f1' : variant === 'danger' ? '#ef4444' : variant === 'green' ? '#10b981' : '#f1f5f9';
   const col = ['primary', 'danger', 'green'].includes(variant) ? '#fff' : '#475569';
   return (
-    <button onClick={onClick} disabled={disabled} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: small ? '6px 14px' : '10px 20px', borderRadius: 10, border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', background: bg, color: col, fontWeight: 700, fontSize: small ? 12 : 13, opacity: disabled ? 0.6 : 1, ...style }}>
+    <button onClick={onClick} disabled={disabled} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: small ? '6px 14px' : '10px 20px', borderRadius: 10, border: 'none', cursor: disabled ? 'not-allowed' : 'pointer', background: bg, color: col, fontWeight: 600, fontSize: small ? 12 : 13, opacity: disabled ? 0.6 : 1, ...style }}>
       {children}
     </button>
   );
@@ -65,7 +65,7 @@ const Accordion = ({ title, children }) => {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden' }}>
-      <button onClick={() => setOpen(!open)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: '#f8fafc', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, color: '#475569' }}>
+      <button onClick={() => setOpen(!open)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', background: '#f8fafc', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13, color: '#475569' }}>
         {title} {open ? <MdExpandLess /> : <MdExpandMore />}
       </button>
       {open && <div style={{ padding: 20, borderTop: '1px solid #f1f5f9' }}>{children}</div>}
@@ -112,7 +112,7 @@ function AccountSection() {
       <Btn onClick={save} style={{ marginTop: 8 }}><MdSave /> Save Profile</Btn>
 
       <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1px solid #f1f5f9' }}>
-        <div style={{ fontWeight: 800, fontSize: 14, color: '#1e293b', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><MdLock style={{ color: '#6366f1' }} /> Change Password</div>
+        <div style={{ fontWeight: 600, fontSize: 14, color: '#1e293b', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><MdLock style={{ color: '#6366f1' }} /> Change Password</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
           <Field label="Current Password">
             <div style={{ position: 'relative' }}>
@@ -171,16 +171,16 @@ function NotesSection() {
   };
 
   const colors = { note: '#fef3c7', reminder: '#dbeafe', task: '#d1fae5', observation: '#ede9fe' };
-  const labels = { note: '📌 Note', reminder: '⏰ Reminder', task: '✅ Task', observation: '🔍 Observation' };
+  const labels = { note: 'Note', reminder: 'Reminder', task: 'Task', observation: 'Observation' };
 
   return (
     <Section icon={<MdStickyNote2 />} title="HR Notes & Reminder Workspace" subtitle="Private recruiter workspace — sticky notes, tasks, follow-ups" accent="#8b5cf6">
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
         <Select value={type} onChange={e => setType(e.target.value)} style={{ width: 160 }}>
-          <option value="note">📌 Note</option>
-          <option value="reminder">⏰ Reminder</option>
-          <option value="task">✅ Task</option>
-          <option value="observation">🔍 Observation</option>
+          <option value="note">Note</option>
+          <option value="reminder">Reminder</option>
+          <option value="task">Task</option>
+          <option value="observation">Observation</option>
         </Select>
         <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Add a note, task, or follow-up reminder..." style={{ flex: 1, padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none' }} />
         <Btn onClick={add} variant="primary"><MdAdd /> Add</Btn>
@@ -221,7 +221,7 @@ function VaultSection() {
     localStorage.setItem('hr_vault', JSON.stringify(updated));
   };
 
-  const catLabels = { interview_template: '📋 Interview Template', evaluation_form: '📊 Evaluation Form', onboarding: '🚀 Onboarding Doc', policy: '📜 HR Policy', other: '📁 Other' };
+  const catLabels = { interview_template: 'Interview Template', evaluation_form: 'Evaluation Form', onboarding: 'Onboarding Doc', policy: 'HR Policy', other: 'Other' };
   const catColor = { interview_template: '#dbeafe', evaluation_form: '#d1fae5', onboarding: '#fef3c7', policy: '#fee2e2', other: '#f1f5f9' };
 
   return (
@@ -308,7 +308,7 @@ function EmailSection() {
 
   return (
     <Section icon={<MdEmail />} title="Advanced Email Configuration" subtitle="SMTP settings for HR notification delivery" accent="#0ea5e9">
-      <Accordion title="⚙️ SMTP Configuration (click to expand)">
+      <Accordion title="SMTP Configuration (click to expand)">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
           <Field label="SMTP Host"><Input value={config.smtp_host} onChange={e => setConfig({ ...config, smtp_host: e.target.value })} placeholder="smtp.gmail.com" /></Field>
           <Field label="SMTP Port"><Input type="number" value={config.smtp_port} onChange={e => setConfig({ ...config, smtp_port: +e.target.value })} /></Field>
@@ -360,14 +360,14 @@ export default function Settings() {
         <Navbar title="Recruiter Control Center" />
         <div className="page-body animate-fade">
           <div style={{ marginBottom: 24 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1e293b' }}>HR Workspace Settings</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 600, color: '#1e293b' }}>HR Workspace Settings</h1>
             <p style={{ color: '#64748b', fontSize: 13 }}>Manage your recruiter profile, preferences, notes, and platform intelligence.</p>
           </div>
 
           {/* Tab bar */}
           <div style={{ display: 'flex', gap: 6, marginBottom: 28, background: '#f8fafc', padding: 6, borderRadius: 14, border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
             {TABS.map(t => (
-              <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, transition: 'all 0.15s', background: activeTab === t.id ? '#6366f1' : 'transparent', color: activeTab === t.id ? '#fff' : '#64748b' }}>
+              <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 13, transition: 'all 0.15s', background: activeTab === t.id ? '#6366f1' : 'transparent', color: activeTab === t.id ? '#fff' : '#64748b' }}>
                 {t.icon} {t.label}
               </button>
             ))}

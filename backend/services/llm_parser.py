@@ -2,6 +2,7 @@ import os
 import json
 import re
 import logging
+import time
 from groq import Groq
 
 logger = logging.getLogger(__name__)
@@ -18,12 +19,40 @@ def safe_json_loads(text: str) -> dict:
         logger.error(f"[LLMParser] JSON parse error: {e}. Raw text: {text}")
         raise
 
+# Rate-limit flag: stores timestamp when disabled; auto-recovers after 5 minutes
+_groq_rate_limited_until: float = 0.0  # Unix timestamp
+
+
+def _is_groq_rate_limited() -> bool:
+    global _groq_rate_limited_until
+    if _groq_rate_limited_until == 0.0:
+        return False
+    if time.time() > _groq_rate_limited_until:
+        # Auto-recover
+        _groq_rate_limited_until = 0.0
+        logger.info("[LLMParser] Groq rate-limit window expired. Re-enabling Groq client.")
+        return False
+    return True
+
+
+def _set_groq_rate_limited(duration_seconds: int = 300):
+    global _groq_rate_limited_until
+    _groq_rate_limited_until = time.time() + duration_seconds
+    logger.warning(f"[LLMParser] Groq disabled for {duration_seconds}s due to rate limit.")
+
+
+# Legacy compatibility alias
+_groq_rate_limited = False  # kept for import compatibility in matching.py
+
+
 def get_groq_client():
+    if _is_groq_rate_limited():
+        return None
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key or "your_groq_key" in api_key:
         return None
     try:
-        return Groq(api_key=api_key)
+        return Groq(api_key=api_key, max_retries=1)
     except Exception as e:
         logger.error(f"[LLMParser] Failed to initialize Groq client: {e}")
         return None
@@ -92,7 +121,8 @@ Response:
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            timeout=25.0
         )
         response_text = completion.choices[0].message.content
         parsed = safe_json_loads(response_text)
@@ -113,12 +143,19 @@ Response:
         parsed.setdefault("employment_timeline", [])
         parsed.setdefault("tools", [])
         parsed.setdefault("technologies", [])
-        parsed.setdefault("confidence_score", 85.0)
+        parsed.setdefault("confidence_score", 70.0)   # conservative default
         parsed.setdefault("ambiguity_detection", [])
-        parsed.setdefault("extraction_reliability", "High")
+        parsed.setdefault("extraction_reliability", "Medium")  # not High by default
         
         return parsed
     except Exception as e:
+        err_str = str(e).lower()
+        # Only permanently throttle on actual rate-limit errors (not timeouts)
+        if "rate_limit" in err_str or "429" in str(e):
+            _set_groq_rate_limited(300)  # 5 min cooldown
+        elif "connection error" in err_str or "service unavailable" in err_str:
+            _set_groq_rate_limited(60)   # 1 min cooldown for connection errors
+        # Timeouts and other errors: do NOT disable Groq permanently
         logger.error(f"[LLMParser] LLM Resume Parsing failed: {e}. Falling back to local.")
         return parse_resume_local_fallback(raw_text, filename)
 
@@ -165,7 +202,8 @@ Response:
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            timeout=25.0
         )
         response_text = completion.choices[0].message.content
         parsed = safe_json_loads(response_text)
@@ -183,6 +221,11 @@ Response:
         
         return parsed
     except Exception as e:
+        err_str = str(e).lower()
+        if "rate_limit" in err_str or "429" in str(e):
+            _set_groq_rate_limited(300)
+        elif "connection error" in err_str or "service unavailable" in err_str:
+            _set_groq_rate_limited(60)
         logger.error(f"[LLMParser] LLM JD Parsing failed: {e}. Falling back to local.")
         return parse_jd_local_fallback(jd_text)
 
@@ -241,21 +284,58 @@ def parse_resume_local_fallback(raw_text: str, filename: str) -> dict:
 def parse_jd_local_fallback(jd_text: str) -> dict:
     """Local fallback parser for job description."""
     from resume_parser import extract_skills, extract_experience_years
-    skills = extract_skills(jd_text)
+    import re
     exp = extract_experience_years(jd_text)
-    
-    # Soft skills filter
-    soft_skills_db = ["communication", "leadership", "teamwork", "problem solving", "management"]
-    required_skills = [s for s in skills if s not in soft_skills_db]
-    
+    soft_skills_db = {"communication", "leadership", "teamwork", "problem solving", "management"}
+
+    # Classify required vs preferred sections
+    preferred_markers = re.compile(
+        r'\b(nice\s+to\s+have|preferred|bonus|plus|good\s+to\s+have|desired|'
+        r'advantageous|optionally?|would\s+be\s+a\s+plus)\b',
+        re.IGNORECASE
+    )
+    required_markers = re.compile(
+        r'\b(required|must\s+have|mandatory|essential|minimum\s+requirements?|'
+        r'qualifications?|responsibilities|requirements?)\b',
+        re.IGNORECASE
+    )
+
+    lines = jd_text.split('\n')
+    required_lines = []
+    preferred_lines = []
+    current_sec = "required"
+
+    for line in lines:
+        if preferred_markers.search(line):
+            current_sec = "preferred"
+        elif required_markers.search(line):
+            current_sec = "required"
+
+        if current_sec == "preferred":
+            preferred_lines.append(line)
+        else:
+            required_lines.append(line)
+
+    req_text = "\n".join(required_lines)
+    pref_text = "\n".join(preferred_lines)
+
+    req_skills = [s for s in extract_skills(req_text) if s not in soft_skills_db]
+    pref_skills = [s for s in extract_skills(pref_text) if s not in soft_skills_db and s not in req_skills]
+
+    if not req_skills:
+        all_skills = extract_skills(jd_text)
+        req_skills = [s for s in all_skills if s not in soft_skills_db]
+
+    all_skills_for_flags = extract_skills(jd_text)
+
     return {
         "role_name": "Job Role",
         "minimum_experience": exp,
-        "required_skills": required_skills,
-        "preferred_skills": [],
+        "required_skills": req_skills,
+        "preferred_skills": pref_skills,
         "domain_requirements": [],
-        "leadership_required": "leadership" in skills or "management" in skills,
-        "communication_required": "communication" in skills,
+        "leadership_required": "leadership" in all_skills_for_flags or "management" in all_skills_for_flags,
+        "communication_required": "communication" in all_skills_for_flags,
         "certifications_required": [],
         "project_requirements": [],
         "management_requirements": []

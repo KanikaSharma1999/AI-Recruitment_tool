@@ -103,7 +103,7 @@ export default function Upload() {
               {/* Job Selection */}
               <div className="card">
                 <div className="flex-between" style={{ marginBottom:16 }}>
-                  <h3 style={{ fontSize:15, fontWeight:700 }}><MdWork style={{ verticalAlign:'middle', marginRight:6 }} />Select Job</h3>
+                  <h3 style={{ fontSize:15, fontWeight:600 }}><MdWork style={{ verticalAlign:'middle', marginRight:6 }} />Select Job</h3>
                   <button className="btn btn-outline btn-sm" onClick={() => setShowJobForm(!showJobForm)}>
                     {showJobForm ? 'Cancel' : '+ Create Job'}
                   </button>
@@ -147,7 +147,7 @@ export default function Upload() {
 
               {/* Dropzone */}
               <div className="card">
-                <h3 style={{ fontSize:15, fontWeight:700, marginBottom:16 }}>
+                <h3 style={{ fontSize:15, fontWeight:600, marginBottom:16 }}>
                   <MdUpload style={{ verticalAlign:'middle', marginRight:6 }} />Upload Resumes (PDF / TXT)
                 </h3>
                 <div
@@ -174,7 +174,7 @@ export default function Upload() {
                       {files.map((f, i) => (
                         <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
                           padding:'7px 12px', background:'#f8fafc', borderRadius:6, fontSize:13 }}>
-                          <span>📄 {f.name}</span>
+                          <span>{f.name}</span>
                           <button onClick={() => removeFile(i)} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--danger)' }}>
                             <MdClose />
                           </button>
@@ -189,7 +189,7 @@ export default function Upload() {
               {(uploading || ranking) && (
                 <div className="card">
                   <div style={{ marginBottom:10, fontWeight:600, fontSize:14 }}>
-                    {uploading ? '⬆️ Uploading and parsing resumes...' : '🤖 Running AI ranking engine...'}
+                    {uploading ? 'Uploading and parsing resumes...' : 'Running AI ranking engine...'}
                   </div>
                   <div className="progress-track">
                     <div className="progress-fill" style={{ width:`${progress}%` }} />
@@ -203,7 +203,7 @@ export default function Upload() {
                 onClick={handleRun} disabled={uploading || ranking}>
                 {uploading || ranking
                   ? <><span className="spinner" /> Processing...</>
-                  : '🚀 Upload & Rank Resumes'}
+                  : 'Upload & Rank Resumes'}
               </button>
             </div>
           )}

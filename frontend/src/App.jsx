@@ -13,6 +13,8 @@ import Account from './pages/Account';
 import ChatbotPanel from './components/ChatbotPanel';
 import SystemStatusBanner from './components/SystemStatusBanner';
 import Compare from './pages/Compare';
+import InterviewRoom from './pages/InterviewRoom';
+import CandidateInterview from './pages/CandidateInterview';
 import { useAuth } from './context/AuthContext';
 
 function AppContent() {
@@ -21,7 +23,7 @@ function AppContent() {
     <BrowserRouter>
         <SystemStatusBanner />
         <Toaster position="top-right" toastOptions={{
-          style: { fontFamily: 'Inter, sans-serif', fontSize: 13 },
+          style: { fontFamily: 'Poppins, sans-serif', fontSize: 13 },
           success: { iconTheme: { primary: '#10b981', secondary: '#fff' } },
         }} />
         <Routes>
@@ -32,6 +34,8 @@ function AppContent() {
           <Route path="/upload"     element={<ProtectedRoute><Upload /></ProtectedRoute>} />
           <Route path="/candidates" element={<ProtectedRoute><Candidates /></ProtectedRoute>} />
           <Route path="/candidates/:id" element={<ProtectedRoute><CandidateProfile /></ProtectedRoute>} />
+          <Route path="/interview-room/:candidateId" element={<ProtectedRoute><InterviewRoom /></ProtectedRoute>} />
+          <Route path="/candidate-interview/:secureToken" element={<CandidateInterview />} />
           <Route path="/jobs"       element={<ProtectedRoute><Jobs /></ProtectedRoute>} />
           <Route path="/settings"   element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/account"    element={<ProtectedRoute><Account /></ProtectedRoute>} />

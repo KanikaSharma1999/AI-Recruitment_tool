@@ -46,13 +46,13 @@ export default function Navbar({ title }) {
               position: 'absolute', top: 40, right: 0, width: 300, zIndex: 1000, 
               padding: 0, overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0'
             }}>
-              <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 12, fontWeight: 800, color: '#475569' }}>
+              <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, color: '#475569' }}>
                 RECENT NOTIFICATIONS
               </div>
               <div style={{ maxHeight: 350, overflowY: 'auto' }}>
                 {notifs.length > 0 ? notifs.map(n => (
                   <div key={n.id} style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', background: n.read ? '#fff' : '#f0f9ff' }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: n.type === 'security' ? '#ef4444' : '#6366f1', marginBottom: 2 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: n.type === 'security' ? '#ef4444' : '#6366f1', marginBottom: 2 }}>
                       {n.type.toUpperCase()}
                     </div>
                     <div style={{ fontSize: 12, color: '#1e293b', lineHeight: 1.4 }}>{n.message}</div>
@@ -63,7 +63,7 @@ export default function Navbar({ title }) {
                 )}
               </div>
               <div style={{ padding: 10, textAlign: 'center', borderTop: '1px solid #e2e8f0', background: '#fff' }}>
-                <button className="btn btn-link" style={{ fontSize: 11, fontWeight: 700 }} onClick={() => navigate('/notifications')}>View All Notifications</button>
+                <button className="btn btn-link" style={{ fontSize: 11, fontWeight: 600 }} onClick={() => navigate('/notifications')}>View All Notifications</button>
               </div>
             </div>
           )}

@@ -117,7 +117,7 @@ async def _cohere_summary(
         return None
     try:
         import cohere
-        client = cohere.Client(api_key)
+        client = cohere.Client(api_key, timeout=10)
         matched_str = ", ".join(matched_skills[:5]) or "none"
         missing_str = ", ".join(missing_skills[:4]) or "none"
         prompt = (

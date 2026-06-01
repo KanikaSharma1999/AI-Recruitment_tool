@@ -9,12 +9,19 @@ logger = logging.getLogger(__name__)
 
 # ── Dependency Checks ────────────────────────────────────────────────────────
 HAS_FAISS = False
-try:
-    import faiss
-    import numpy as np
-    HAS_FAISS = True
-except ImportError:
-    logger.warning("⚠️ [VectorStore] FAISS or Numpy not installed. Vector search will be disabled.")
+import sys
+# On Windows, faiss-cpu has a known OpenMP deadlock issue that causes imports to hang.
+# We check the DISABLE_FAISS env variable (defaulting to true on Windows to prevent hanging).
+disable_faiss_env = os.getenv("DISABLE_FAISS", "true" if sys.platform == "win32" else "false")
+if disable_faiss_env.lower() != "true":
+    try:
+        import faiss
+        import numpy as np
+        HAS_FAISS = True
+    except Exception as e:
+        logger.warning(f"⚠️ [VectorStore] Failed to import FAISS: {e}. Vector search will be disabled.")
+else:
+    logger.info("[VectorStore] FAISS is disabled via environment variable or platform default.")
 
 # ── Lazy global model (loaded once) ──────────────────────────────────────────
 _model = None

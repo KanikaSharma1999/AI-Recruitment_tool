@@ -12,7 +12,8 @@ import InterviewInsightCard from '../components/InterviewInsightCard';
 import API from '../api/client';
 import toast from 'react-hot-toast';
 import { MdArrowBack, MdCalendarToday, MdThumbUp, MdThumbDown, MdCheckCircle,
-         MdSend, MdDelete, MdOpenInNew, MdInfoOutline, MdExpandMore, MdExpandLess, MdCompare } from 'react-icons/md';
+         MdSend, MdDelete, MdOpenInNew, MdInfoOutline, MdExpandMore, MdExpandLess, MdCompare,
+         MdContentCopy, MdEmail, MdShare } from 'react-icons/md';
 
 // ── Score helpers ─────────────────────────────────────────────────────────────
 const safeScore = (value) => {
@@ -35,7 +36,7 @@ const ResumePreview = ({ id, filename }) => {
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700 }}>📄 Resume: {filename}</h3>
+        <h3 style={{ fontSize: 15, fontWeight: 700 }}>Resume: {filename}</h3>
         <div style={{ display: 'flex', gap: 8 }}>
           <button 
             className="btn btn-sm btn-outline"
@@ -68,7 +69,7 @@ const ResumePreview = ({ id, filename }) => {
 
         {error ? (
           <div style={{ textAlign: 'center', padding: 20 }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>⚠️</div>
+            <MdInfoOutline size={40} style={{ color: 'var(--text-muted)', marginBottom: 10 }} />
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Resume File Not Found</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 250 }}>
               The physical file might have been moved or deleted from the server.
@@ -128,14 +129,25 @@ const AIMatchScoreCard = ({ c }) => {
   const [showWeights, setShowWeights] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
 
-  const overall   = safeScore(c.score);
-  const skillS    = safeScore(c.skill_score);
+  const overall   = safeScore(c.ai_match_score !== undefined && c.ai_match_score !== null ? c.ai_match_score : c.score);
+  const skillS    = safeScore(c.skills_score !== undefined && c.skills_score !== null ? c.skills_score : c.skill_score);
   const expS      = safeScore(c.experience_score);
   const semanticS = safeScore(c.semantic_score);
-  const expl      = c.match_explanation || {};
-  const breakdown = expl.score_breakdown || {};
+  const projS     = safeScore(c.projects_score !== undefined ? c.projects_score : c.project_score);
+  const certS     = safeScore(c.certification_score !== undefined ? c.certification_score : c.cert_score);
+  const qualS     = safeScore(c.resume_quality !== undefined ? c.resume_quality : c.quality_score);
 
   const ringColor = getColor(overall);
+
+  // Extract explanation lists from either candidate or legacy match_explanation
+  const expl = c.match_explanation || {};
+  const exactMatches = c.exact_matches || expl.exact_matches || [];
+  const semanticMatches = c.semantic_matches || expl.semantic_matches || [];
+  const partialMatches = c.partial_matches || expl.partial_matches || [];
+  const missingSkills = c.missing_skills || expl.missing_skills || [];
+  const bonusSkills = c.bonus_skills || expl.bonus_skills || [];
+  const projectsList = c.projects || expl.projects || [];
+  const certsList = c.certifications || expl.certifications || [];
 
   return (
     <div className="card">
@@ -163,7 +175,7 @@ const AIMatchScoreCard = ({ c }) => {
             Overall Match Score
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            {expl.overall_verdict || (overall >= 80 ? '🟢 Excellent match' : overall >= 60 ? '🟡 Good match' : overall >= 40 ? '🟠 Partial match' : '🔴 Weak match')}
+            {c.ai_verdict || (overall >= 80 ? 'Excellent match' : overall >= 60 ? 'Good match' : overall >= 40 ? 'Partial match' : 'Weak match')}
           </div>
         </div>
       </div>
@@ -174,11 +186,11 @@ const AIMatchScoreCard = ({ c }) => {
           Score Breakdown
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <ScoreBar label="Skill Match"      score={c.skill_score}
+          <ScoreBar label="Skill Match"      score={skillS}
             tooltip="How well candidate's skills match the job requirements" />
-          <ScoreBar label="Experience Match" score={c.experience_score}
+          <ScoreBar label="Experience Match" score={expS}
             tooltip="Candidate's years of experience vs. required years" />
-          <ScoreBar label="Semantic Match"   score={c.semantic_score}
+          <ScoreBar label="Semantic Match"   score={semanticS}
             tooltip="AI-assessed contextual relevance of resume content to the job" />
         </div>
       </div>
@@ -193,7 +205,7 @@ const AIMatchScoreCard = ({ c }) => {
           width: '100%', justifyContent: 'space-between', marginBottom: 4,
         }}
       >
-        <span>ℹ️ How is this score calculated?</span>
+        <span>How is this score calculated?</span>
         {showWeights ? <MdExpandLess /> : <MdExpandMore />}
       </button>
       {showWeights && (
@@ -202,97 +214,95 @@ const AIMatchScoreCard = ({ c }) => {
           marginBottom: 8, fontSize: 12, lineHeight: 1.8,
         }}>
           <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Weights Used</div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {[['Skills', 60, '#6366f1'], ['Experience', 30, '#f59e0b'], ['Semantic', 10, '#22c55e']].map(([label, w, color]) => (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+            {[
+              ['Skills', 40, '#6366f1'],
+              ['Experience', 25, '#f59e0b'],
+              ['Semantic', 15, '#22c55e'],
+              ['Projects', 10, '#8b5cf6'],
+              ['Certifications', 5, '#06b6d4'],
+              ['Resume Quality', 5, '#ec4899']
+            ].map(([label, w, color]) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 3, background: color }} />
-                <span><b>{label}</b> → {w}%</span>
+                <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+                <span><b>{label}</b>: {w}%</span>
               </div>
             ))}
           </div>
           <div style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 11, color: '#6366f1',
             background: '#eef2ff', padding: '4px 8px', borderRadius: 4 }}>
-            {breakdown.formula || '0.60 × skill + 0.30 × experience + 0.10 × semantic'}
+            {'0.40×skills + 0.25×exp + 0.15×sem + 0.10×projects + 0.05×cert + 0.05×quality'}
           </div>
         </div>
       )}
 
       {/* Why this score — expandable explanation */}
-      {Object.keys(expl).length > 0 && (
-        <>
-          <button
-            onClick={() => setShowExplanation(v => !v)}
-            style={{
-              background: 'linear-gradient(135deg, #eff6ff, #f0fdf4)',
-              border: '1px solid #bfdbfe', borderRadius: 8,
-              padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-              color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: 4,
-              width: '100%', justifyContent: 'space-between', fontWeight: 600,
-            }}
-          >
-            <span>🔍 Why this score? (Match Explanation)</span>
-            {showExplanation ? <MdExpandLess /> : <MdExpandMore />}
-          </button>
-          {showExplanation && (
-            <div style={{
-              border: '1px solid #bfdbfe', borderRadius: 8, padding: 14,
-              marginTop: 6, background: '#fafbff', fontSize: 13,
-            }}>
-              {expl.skills_summary && (
-                <div style={{ marginBottom: 10, fontWeight: 600, color: '#1d4ed8' }}>
-                  📊 {expl.skills_summary}
-                </div>
-              )}
-              {expl.exact_matches?.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', marginBottom: 4 }}>✔ Exact Skill Matches</div>
-                  <div>{expl.exact_matches.map(s => <span key={s} style={{ display:'inline-block', background:'#f0fdf4', color:'#15803d', border:'1px solid #bbf7d0', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-                </div>
-              )}
-              {expl.semantic_matches?.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>≈ Semantic Matches (AI-detected variants)</div>
-                  <div>{expl.semantic_matches.map(s => <span key={s} style={{ display:'inline-block', background:'#f5f3ff', color:'#7c3aed', border:'1px solid #ddd6fe', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-                </div>
-              )}
-              {expl.partial_matches?.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#d97706', marginBottom: 4 }}>~ Partial Matches (fuzzy)</div>
-                  <div>{expl.partial_matches.map(s => <span key={s} style={{ display:'inline-block', background:'#fffbeb', color:'#d97706', border:'1px solid #fde68a', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-                </div>
-              )}
-              {expl.missing_skills?.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>⚠ Missing Skills</div>
-                  <div>{expl.missing_skills.map(s => <span key={s} style={{ display:'inline-block', background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-                </div>
-              )}
-              {expl.experience_verdict && (
-                <div style={{ marginBottom: 8, padding: '6px 10px', background: '#f8fafc', borderRadius: 6, fontSize: 12 }}>
-                  🗓 {expl.experience_verdict}
-                </div>
-              )}
-              {expl.bonus_skills?.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', marginBottom: 4 }}>⭐ Bonus Skills (beyond requirements)</div>
-                  <div>{expl.bonus_skills.map(s => <span key={s} style={{ display:'inline-block', background:'#ecfeff', color:'#0891b2', border:'1px solid #a5f3fc', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-                </div>
-              )}
-              {expl.certifications?.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0f766e', marginBottom: 4 }}>🎓 Certifications</div>
-                  <div style={{ fontSize: 12, color: '#0f766e' }}>{expl.certifications.join(' · ')}</div>
-                </div>
-              )}
-              {expl.projects?.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>📁 Detected Projects</div>
-                  <div style={{ fontSize: 12 }}>{expl.projects.join(' · ')}</div>
-                </div>
-              )}
+      <button
+        onClick={() => setShowExplanation(v => !v)}
+        style={{
+          background: 'linear-gradient(135deg, #eff6ff, #f0fdf4)',
+          border: '1px solid #bfdbfe', borderRadius: 8,
+          padding: '6px 12px', fontSize: 12, cursor: 'pointer',
+          color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: 4,
+          width: '100%', justifyContent: 'space-between', fontWeight: 600,
+        }}
+      >
+        <span>Why this score? (Match Explanation)</span>
+        {showExplanation ? <MdExpandLess /> : <MdExpandMore />}
+      </button>
+      {showExplanation && (
+        <div style={{
+          border: '1px solid #bfdbfe', borderRadius: 8, padding: 14,
+          marginTop: 6, background: '#fafbff', fontSize: 13,
+        }}>
+          {c.recruiter_explanation && (
+            <div style={{ marginBottom: 10, fontWeight: 600, color: '#1d4ed8', lineHeight: 1.5 }}>
+              {c.recruiter_explanation}
             </div>
           )}
-        </>
+          {exactMatches.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', marginBottom: 4 }}>Exact Skill Matches</div>
+              <div>{exactMatches.map(s => <span key={s} style={{ display:'inline-block', background:'#f0fdf4', color:'#15803d', border:'1px solid #bbf7d0', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
+            </div>
+          )}
+          {semanticMatches.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Semantic Matches (AI-detected variants)</div>
+              <div>{semanticMatches.map(s => <span key={s} style={{ display:'inline-block', background:'#f5f3ff', color:'#7c3aed', border:'1px solid #ddd6fe', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
+            </div>
+          )}
+          {partialMatches.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#d97706', marginBottom: 4 }}>Partial Matches (fuzzy)</div>
+              <div>{partialMatches.map(s => <span key={s} style={{ display:'inline-block', background:'#fffbeb', color:'#d97706', border:'1px solid #fde68a', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
+            </div>
+          )}
+          {missingSkills.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>Missing Required Skills</div>
+              <div>{missingSkills.map(s => <span key={s} style={{ display:'inline-block', background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
+            </div>
+          )}
+          {bonusSkills.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', marginBottom: 4 }}>Bonus Skills (beyond requirements)</div>
+              <div>{bonusSkills.map(s => <span key={s} style={{ display:'inline-block', background:'#ecfeff', color:'#0891b2', border:'1px solid #a5f3fc', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
+            </div>
+          )}
+          {certsList.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#0f766e', marginBottom: 4 }}>Certifications</div>
+              <div style={{ fontSize: 12, color: '#0f766e' }}>{certsList.join(' · ')}</div>
+            </div>
+          )}
+          {projectsList.length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Detected Projects</div>
+              <div style={{ fontSize: 12 }}>{projectsList.join(' · ')}</div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -429,6 +439,91 @@ const AiFeedbackCard = ({ candidate }) => {
   );
 };
 
+const TranscriptModal = ({ candidate, onClose }) => {
+  const transcript = candidate.transcript || [];
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+      background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 1000, padding: 20
+    }} onClick={onClose}>
+      <div style={{
+        background: '#fff', width: '100%', maxWidth: 700, borderRadius: 16,
+        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+        display: 'flex', flexDirection: 'column', maxHeight: '85vh',
+        animation: 'modalSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+      }} onClick={e => e.stopPropagation()}>
+        <div style={{
+          padding: '18px 24px', borderBottom: '1px solid #e2e8f0',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+        }}>
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', margin: 0 }}>💬 Interview Transcript</h3>
+            <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>Candidate: {candidate.name}</p>
+          </div>
+          <button style={{
+            background: 'none', border: 'none', fontSize: 20, cursor: 'pointer',
+            color: '#94a3b8'
+          }} onClick={onClose}>&times;</button>
+        </div>
+        <div style={{ padding: 24, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {transcript.length === 0 ? (
+            <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No transcript recorded for this interview.</p>
+          ) : (
+            transcript.map((line, idx) => {
+              const speaker = idx % 2 === 0 ? "Interviewer" : "Candidate";
+              const isInterviewer = speaker === "Interviewer";
+              return (
+                <div key={idx} style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: isInterviewer ? 'flex-start' : 'flex-end',
+                  width: '100%'
+                }}>
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#64748b',
+                    marginBottom: 4,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    {speaker}
+                  </div>
+                  <div style={{
+                    background: isInterviewer ? '#f1f5f9' : '#e0e7ff',
+                    color: isInterviewer ? '#334155' : '#3730a3',
+                    padding: '10px 14px',
+                    borderRadius: 12,
+                    borderBottomLeftRadius: isInterviewer ? 0 : 12,
+                    borderBottomRightRadius: isInterviewer ? 12 : 0,
+                    fontSize: 13.5,
+                    lineHeight: 1.5,
+                    maxWidth: '80%',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                  }}>
+                    {line}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div style={{ padding: '14px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="btn btn-outline btn-sm" onClick={onClose}>Close</button>
+        </div>
+        <style>{`
+          @keyframes modalSlideIn {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+          }
+        `}</style>
+      </div>
+    </div>
+  );
+};
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function CandidateProfile() {
   const { id } = useParams();
@@ -439,12 +534,18 @@ export default function CandidateProfile() {
   const [savingNote, setSavingNote] = useState(false);
   const [showInterview, setShowInterview] = useState(false);
   const [isInterviewing, setIsInterviewing] = useState(false);
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false);
 
   const fetchCandidate = () => {
     setLoading(true);
     API.get(`/candidates/${id}`)
       .then(r => {
         setC(r.data);
+        if (r.data?.interview?.status === 'live') {
+          setIsInterviewing(true);
+        } else {
+          setIsInterviewing(false);
+        }
         // Debug scores in console
         console.log('[SCORE DEBUG]', {
           score:            r.data.score,
@@ -483,23 +584,55 @@ export default function CandidateProfile() {
     finally { setSavingNote(false); }
   };
 
-  const startInterview = () => {
+  const [showRecording, setShowRecording] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('recording') === 'true';
+  });
+
+  const startInterview = async () => {
     if (!c.interview?.meeting_link) {
       toast.error('No meeting link scheduled. Schedule an interview first.');
       return;
     }
-    window.open(c.interview.meeting_link, '_blank');
-    setIsInterviewing(true);
+    // Navigate to the secure, proctored InterviewRoom
+    navigate(`/interview-room/${id}`);
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('start') === 'true' && c && c.interview && c.interview.status === 'scheduled') {
+      // Clear query params so it doesn't trigger repeatedly on re-render
+      const url = new URL(window.location.href);
+      url.searchParams.delete('start');
+      window.history.replaceState({}, '', url.toString());
+      startInterview();
+    }
+  }, [c]);
 
   const endInterview = async () => {
     setIsInterviewing(false);
     toast.success('Interview ended. Generating AI Analysis...');
     try {
-      await API.post('/interviews/analyze', { candidate_id: id });
+      await API.post('/interviews/end', { candidate_id: id });
       fetchCandidate();
-    } catch {
-      toast.error('Failed to generate AI Analysis');
+    } catch (err) {
+      toast.error('Failed to end interview and trigger analysis');
+    }
+  };
+
+  const downloadReport = async () => {
+    try {
+      const response = await API.get(`/interviews/export/${id}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `interview_report_${c.name.replace(/\s+/g, '_')}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      toast.success('Report downloaded');
+    } catch (err) {
+      toast.error('Failed to download PDF report');
     }
   };
 
@@ -525,6 +658,16 @@ export default function CandidateProfile() {
   const missingSkills = c.missing_skills      || [];
   const allSkills     = c.skills              || [];
 
+  // Check if scheduled interview is missed (past 15 minutes limit)
+  let isMissed = false;
+  if (c.interview && c.interview.date && c.interview.time) {
+    const scheduledDateTime = new Date(`${c.interview.date}T${c.interview.time}:00`);
+    const cutOffTime = new Date(scheduledDateTime.getTime() + 15 * 60 * 1000);
+    if (new Date() > cutOffTime) {
+      isMissed = true;
+    }
+  }
+
   return (
     <div className="layout">
       <Sidebar />
@@ -538,10 +681,10 @@ export default function CandidateProfile() {
               <MdArrowBack /> Back
             </button>
             <div style={{ flex: 1 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 800 }}>{c.name}</h1>
+              <h1 style={{ fontSize: 22, fontWeight: 600 }}>{c.name}</h1>
               <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{c.email} · {c.phone}</p>
             </div>
-            <StatusBadge status={c.status} />
+            <StatusBadge status={c.status} interview={c.interview} />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20 }}>
@@ -550,15 +693,15 @@ export default function CandidateProfile() {
 
               {/* AI Scoring — Multi-Dimensional */}
               <div className="card">
-                <div className="card-title">🎯 AI Match Intelligence</div>
+                <div className="card-title">AI Match Intelligence</div>
                 <ScoreDimensions candidate={c} />
               </div>
 
               {/* Recruiter Matching Explanation & Enterprise Details */}
               {c.recruiter_explanation && (
                 <div className="card" style={{ border: '1px solid #bfdbfe', background: 'linear-gradient(135deg, #eff6ff, #f8fafc)', borderRadius: 12, padding: 20 }}>
-                  <h3 style={{ margin: '0 0 12px 0', fontSize: 15, fontWeight: 800, color: '#1e40af', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    📋 Recruiter matching explanation
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: 15, fontWeight: 600, color: '#1e40af', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    Recruiter matching explanation
                   </h3>
                   <div style={{ color: '#1e3a8a', fontSize: 13.5, lineHeight: 1.6, whiteSpace: 'pre-line', marginBottom: 16 }}>
                     {c.recruiter_explanation}
@@ -600,17 +743,17 @@ export default function CandidateProfile() {
 
               {/* Hiring Summary */}
               <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>AI Hiring Summary</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>AI Hiring Summary</div>
                 <HiringSummaryCard candidate={c} />
               </div>
 
               {/* ── SKILLS BREAKDOWN ── */}
               <div className="card">
-                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>🔬 Skills Breakdown</h3>
+                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 600 }}>Skills Breakdown</h3>
 
                 {/* 1. Required Skills from JD */}
                 <SkillSection
-                  icon="📌"
+                  icon=""
                   title="Required Skills (JD)"
                   titleColor="#1d4ed8"
                   skills={jdSkills}
@@ -620,7 +763,7 @@ export default function CandidateProfile() {
 
                 {/* 2. Matched Skills */}
                 <SkillSection
-                  icon="✅"
+                  icon=""
                   title="Matched Skills"
                   titleColor="#15803d"
                   skills={matchedSkills}
@@ -630,7 +773,7 @@ export default function CandidateProfile() {
 
                 {/* 3. Missing Skills */}
                 <SkillSection
-                  icon="❌"
+                  icon=""
                   title="Missing Skills"
                   titleColor="#dc2626"
                   skills={missingSkills}
@@ -641,7 +784,7 @@ export default function CandidateProfile() {
                 {allSkills.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                      📋 All Extracted Resume Skills ({allSkills.length})
+                      All Extracted Resume Skills ({allSkills.length})
                     </div>
                     <div>
                       {allSkills.map(s => <SkillChip key={s} skill={s} variant="neutral" />)}
@@ -653,8 +796,8 @@ export default function CandidateProfile() {
               {/* 🤖 AI Resume Feedback — Redesigned for Structured Insights */}
               <div className="card" style={{ border: '1px solid var(--border)', background: 'linear-gradient(to bottom, #fff, #f8fafc)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
-                  <span style={{ fontSize: 20 }}>🤖</span>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>AI Resume Evaluation</h3>
+                  <span style={{ fontSize: 20 }}></span>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>AI Resume Evaluation</h3>
                 </div>
 
                 {c.feedback && typeof c.feedback === 'object' && Object.keys(c.feedback).length > 0 ? (
@@ -664,7 +807,7 @@ export default function CandidateProfile() {
                     {c.feedback.strengths?.length > 0 && (
                       <div className="feedback-section">
                         <div style={{ fontSize: 12, fontWeight: 700, color: '#15803d', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          ✔ Strengths
+                          Strengths
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {c.feedback.strengths.map((s, i) => (
@@ -681,7 +824,7 @@ export default function CandidateProfile() {
                     {c.feedback.weaknesses?.length > 0 && (
                       <div className="feedback-section">
                         <div style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          ⚠ Weaknesses / Gaps
+                          Weaknesses / Gaps
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {c.feedback.weaknesses.map((w, i) => (
@@ -698,7 +841,7 @@ export default function CandidateProfile() {
                     {c.feedback.assessment?.length > 0 && (
                       <div className="feedback-section">
                         <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          🔬 Technical Assessment
+                          Technical Assessment
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           {c.feedback.assessment.map((a, i) => (
@@ -760,7 +903,7 @@ export default function CandidateProfile() {
 
               {/* Education & Experience */}
               <div className="card">
-                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>📚 Background</h3>
+                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 600 }}>Background</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   <div>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Education</div>
@@ -787,7 +930,7 @@ export default function CandidateProfile() {
 
               {/* HR Notes */}
               <div className="card">
-                <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>📝 HR Notes</h3>
+                <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 600 }}>HR Notes</h3>
                 {c.notes?.length > 0 && (
                   <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {c.notes.map((n, i) => (
@@ -816,11 +959,15 @@ export default function CandidateProfile() {
 
               {/* Actions */}
               <div className="card">
-                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>Actions</h3>
+                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 600 }}>Actions</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <button className="btn btn-outline" style={{ justifyContent: 'center' }}
-                    onClick={() => updateStatus('pending')}>
-                    Pending
+                    onClick={() => updateStatus('applied')}>
+                    Mark as Applied
+                  </button>
+                  <button className="btn btn-outline" style={{ justifyContent: 'center' }}
+                    onClick={() => updateStatus('screening')}>
+                    Mark as Screening
                   </button>
                   <button className="btn btn-success" style={{ justifyContent: 'center' }}
                     onClick={() => updateStatus('shortlisted')}>
@@ -831,8 +978,12 @@ export default function CandidateProfile() {
                     <MdCalendarToday /> Schedule Interview
                   </button>
                   <button className="btn btn-purple" style={{ justifyContent: 'center' }}
-                    onClick={() => updateStatus('selected')}>
-                    <MdCheckCircle /> Mark as Selected
+                    onClick={() => updateStatus('offered')}>
+                    <MdCheckCircle /> Mark as Offered
+                  </button>
+                  <button className="btn btn-success" style={{ justifyContent: 'center', background: '#059669', color: '#fff', borderColor: '#059669' }}
+                    onClick={() => updateStatus('hired')}>
+                    <MdCheckCircle /> Mark as Hired
                   </button>
                   <button className="btn btn-danger" style={{ justifyContent: 'center' }}
                     onClick={() => updateStatus('rejected')}>
@@ -858,7 +1009,7 @@ export default function CandidateProfile() {
                 
                 {/* Activity History */}
                 <div className="card">
-                  <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>🕒 Activity History</h3>
+                  <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 600 }}>Activity History</h3>
                   {c.activity_history?.length > 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
                       {/* Vertical line connecting timeline dots */}
@@ -889,7 +1040,7 @@ export default function CandidateProfile() {
                 {/* Interview Details */}
                 {c.interview && (
                   <div className="card">
-                    <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>📅 Interview Details</h3>
+                    <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 600 }}>Interview Details</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14 }}>
                       <div><span style={{ color: 'var(--text-secondary)' }}>Date: </span><b>{c.interview.date}</b></div>
                       <div><span style={{ color: 'var(--text-secondary)' }}>Time: </span><b>{c.interview.time}</b></div>
@@ -900,28 +1051,150 @@ export default function CandidateProfile() {
                         <div><span style={{ color: 'var(--text-secondary)' }}>Location: </span>{c.interview.location}</div>
                       )}
                       {c.interview.meeting_link && (
-                        <div style={{ marginTop: 8, padding: 12, background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                          <div style={{ marginBottom: 8, fontWeight: 600, color: '#166534', fontSize: 13 }}>🎥 Video Call</div>
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <button className="btn btn-success btn-sm" style={{ flex: 1 }} onClick={startInterview}>
-                              {isInterviewing ? '🟢 Monitoring...' : 'Start Interview'}
-                            </button>
-                            <button className="btn btn-outline btn-sm" onClick={() => {
-                              navigator.clipboard.writeText(c.interview.meeting_link);
-                              toast.success('Link copied');
-                            }}>Copy</button>
+                        c.interview.status === 'completed' || c.status === 'interview_completed' || c.status === 'interview_analyzed' ? (
+                          <div style={{ marginTop: 8, padding: 12, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                            <div style={{ marginBottom: 10, fontWeight: 700, color: '#475569', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span>Interview Completed</span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button className="btn btn-outline btn-sm" style={{ flex: 1, fontSize: 11, fontWeight: 700 }} onClick={() => {
+                                  const card = document.getElementById('ai-analysis-card');
+                                  if (card) {
+                                    card.scrollIntoView({ behavior: 'smooth' });
+                                  } else {
+                                    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                                  }
+                                }}>
+                                  View Analysis
+                                </button>
+                                <button className="btn btn-outline btn-sm" style={{ flex: 1, fontSize: 11, fontWeight: 700 }} onClick={() => setShowRecording(!showRecording)}>
+                                  {showRecording ? 'Hide Player' : 'View Recording'}
+                                </button>
+                              </div>
+                              <button className="btn btn-primary btn-sm" style={{ width: '100%', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={downloadReport}>
+                                Download Report
+                              </button>
+                              <button className="btn btn-outline btn-sm" style={{ width: '100%', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => setShowTranscriptModal(true)}>
+                                View Transcript
+                              </button>
+                            </div>
                           </div>
+                        ) : (
+                          isMissed ? (
+                            <div style={{ marginTop: 8, padding: 12, background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
+                              <div style={{ marginBottom: 6, fontWeight: 700, color: '#991b1b', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>Missed Interview</span>
+                              </div>
+                              <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5 }}>
+                                The scheduled interview slot has expired (limit was 15 minutes past {c.interview.time}). You can no longer start this interview.
+                              </div>
+                            </div>
+                          ) : (() => {
+                            const meetingLink = c.interview?.meeting_link || '';
+                            const directJitsiUrl = meetingLink;
+
+                            return (
+                              <div style={{ marginTop: 8, padding: 12, background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                                <div style={{ marginBottom: 8, fontWeight: 600, color: '#166534', fontSize: 13 }}>Video Interview Ready</div>
+                                
+                                <button className="btn btn-success btn-sm" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }} onClick={startInterview}>
+                                  Launch Secure Interview Room
+                                </button>
+
+                                <div style={{ borderTop: '1px solid #bbf7d0', marginTop: 10, paddingTop: 10 }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: '#166534', marginBottom: 6 }}>Candidate Portal Invite</div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                      <input 
+                                        type="text" 
+                                        readOnly 
+                                        value={directJitsiUrl} 
+                                        style={{ flex: 1, fontSize: 11, padding: '6px 10px', border: '1px solid #bbf7d0', borderRadius: 6, background: '#fff', color: '#1e293b' }} 
+                                        onClick={(e) => e.target.select()}
+                                      />
+                                      <button 
+                                        className="btn btn-outline btn-sm" 
+                                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', borderColor: '#bbf7d0', color: '#166534', fontWeight: 600, fontSize: 12 }}
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(directJitsiUrl);
+                                          toast.success('Direct Jitsi link copied!');
+                                        }}
+                                        title="Copy Link"
+                                      >
+                                        <MdContentCopy size={14} /> Copy Link
+                                      </button>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                      <button 
+                                        className="btn btn-outline btn-sm" 
+                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#fff', borderColor: '#bbf7d0', color: '#166534', fontWeight: 600, fontSize: 12 }}
+                                        onClick={() => {
+                                          window.open(`mailto:${c.email}?subject=Your Interview Link for ${c.job_title || 'Software Engineer'}&body=Hi ${c.name},%0D%0A%0D%0APlease join your interview session using the following direct link: %0D%0A${directJitsiUrl}%0D%0A%0D%0ABest regards,%0D%0ARecruiting Team`);
+                                        }}
+                                      >
+                                        <MdEmail size={14} /> Email Invite
+                                      </button>
+                                      <button 
+                                        className="btn btn-outline btn-sm" 
+                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#fff', borderColor: '#bbf7d0', color: '#166534', fontWeight: 600, fontSize: 12 }}
+                                        onClick={() => {
+                                          window.open(`https://api.whatsapp.com/send?text=Hi ${c.name}, please join your interview here: ${encodeURIComponent(directJitsiUrl)}`);
+                                        }}
+                                      >
+                                        <MdShare size={14} /> WhatsApp Invite
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()
+                          )
+                        )
+                      }
+
+                      {/* Premium Mock Video Recording Player */}
+                      {showRecording && (
+                        <div style={{ marginTop: 12, padding: 16, background: '#0f172a', borderRadius: 12, border: '1px solid #334155', color: '#fff' }} className="animate-fade">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🎥 Recorded Session</span>
+                            <span style={{ fontSize: 10, background: '#ef4444', color: '#fff', padding: '2px 6px', borderRadius: 4, fontWeight: 800 }}>ARCHIVED</span>
+                          </div>
+                          
+                          {/* Visual Waveform mockup to show audio capture */}
+                          <div style={{ height: 60, background: 'rgba(30, 41, 59, 0.5)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 8, border: '1px solid #1e293b', marginBottom: 12 }}>
+                            {[20, 40, 15, 60, 80, 45, 90, 30, 70, 50, 25, 60, 40, 85, 30, 20, 50, 75, 40, 95, 20, 60, 45, 80, 35, 10, 30, 50].map((h, i) => (
+                              <div
+                                key={i}
+                                style={{
+                                  width: 3,
+                                  height: `${h}%`,
+                                  background: 'linear-gradient(to top, #6366f1, #818cf8)',
+                                  borderRadius: 2,
+                                  animation: `pulseWave ${1 + Math.random()}s ease-in-out infinite alternate`
+                                }}
+                              />
+                            ))}
+                          </div>
+
+                          <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>Track: Candidate + Screen Share</span>
+                            <span>Duration: {c.interview.duration_seconds ? `${Math.round(c.interview.duration_seconds / 60)}m ${Math.round(c.interview.duration_seconds % 60)}s` : 'N/A'}</span>
+                          </div>
+
+                          <style>{`
+                            @keyframes pulseWave {
+                              0% { transform: scaleY(0.4); opacity: 0.5; }
+                              100% { transform: scaleY(1); opacity: 1; }
+                            }
+                          `}</style>
                         </div>
                       )}
 
-                      {/* Live monitoring panel */}
                       {isInterviewing && (
-                        <div style={{ marginTop: 12 }}>
-                          <InterviewMonitor candidateId={id} />
-                          <button className="btn btn-danger btn-sm" style={{ width: '100%', marginTop: 8 }}
-                            onClick={endInterview}>
-                            ⏹ End Interview & Analyze
-                          </button>
+                        <div style={{ marginTop: 8, padding: 10, background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe', fontSize: 12, color: '#1e40af' }}>
+                          Interview session is live. Use the Interview Room to monitor.
                         </div>
                       )}
 
@@ -947,6 +1220,13 @@ export default function CandidateProfile() {
             candidate={c}
             onClose={() => setShowInterview(false)}
             onSuccess={fetchCandidate}
+          />
+        )}
+
+        {showTranscriptModal && (
+          <TranscriptModal
+            candidate={c}
+            onClose={() => setShowTranscriptModal(false)}
           />
         )}
       </div> // Close Layout

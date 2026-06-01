@@ -5,7 +5,7 @@ import { MdClose, MdCalendarToday } from 'react-icons/md';
 
 export default function InterviewModal({ candidate, onClose, onSuccess }) {
   const [form, setForm] = useState({
-    date: '', time: '10:00', mode: 'online', location: '', notes: ''
+    date: '', time: '10:00', mode: 'online', location: '', notes: '', duration: 30
   });
   const [loading, setLoading] = useState(false);
 
@@ -58,13 +58,25 @@ export default function InterviewModal({ candidate, onClose, onSuccess }) {
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Mode *</label>
-            <select className="form-select" value={form.mode} onChange={e => set('mode', e.target.value)}>
-              <option value="online">Online (Video Call)</option>
-              <option value="offline">Offline (In-Person)</option>
-              <option value="phone">Phone Interview</option>
-            </select>
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label">Mode *</label>
+              <select className="form-select" value={form.mode} onChange={e => set('mode', e.target.value)}>
+                <option value="online">Online (Video Call)</option>
+                <option value="offline">Offline (In-Person)</option>
+                <option value="phone">Phone Interview</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Duration *</label>
+              <select className="form-select" value={form.duration} onChange={e => set('duration', parseInt(e.target.value))}>
+                <option value={15}>15 Minutes</option>
+                <option value={30}>30 Minutes</option>
+                <option value={45}>45 Minutes</option>
+                <option value={60}>60 Minutes</option>
+                <option value={90}>90 Minutes</option>
+              </select>
+            </div>
           </div>
 
           {form.mode !== 'online' && (

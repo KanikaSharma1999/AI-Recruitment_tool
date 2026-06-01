@@ -14,7 +14,7 @@ async def reset_admin():
     db = client[DB_NAME]
     users_col = db["users"]
     
-    email = "admin@ats.com"
+    email = "sandhyagowda506@gmail.com"
     password = "admin123"
     hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     

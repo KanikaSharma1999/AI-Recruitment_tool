@@ -126,6 +126,7 @@ class DatabaseManager:
             await self.db["users"].create_index([("email", ASCENDING)], unique=True)
             await self.db["candidates"].create_index([("job_id", ASCENDING)])
             await self.db["candidates"].create_index([("status", ASCENDING)])
+            await self.db["candidates"].create_index([("pipeline_stage", ASCENDING)])
             await self.db["candidates"].create_index([("score", ASCENDING)])
             await self.db["jobs"].create_index([("created_at", ASCENDING)])
             
@@ -133,6 +134,10 @@ class DatabaseManager:
             self.last_error = None
             self.retry_count = 0
             logger.info("[DatabaseManager] Connected successfully to MongoDB Atlas!")
+            
+            # Run non-blocking database migrations
+            asyncio.create_task(run_db_migrations())
+            
             return True
             
         except Exception as e:
@@ -226,11 +231,82 @@ users_col = SafeCollection("users")
 jobs_col = SafeCollection("jobs")
 candidates_col = SafeCollection("candidates")
 settings_col = SafeCollection("settings")
+interview_sessions_col = SafeCollection("interview_sessions")
 
 async def init_db():
+    import asyncio
     masked = db_manager.get_masked_uri()
     logger.info(f"[DatabaseManager] Startup connection to: {masked}")
-    return await db_manager.connect()
+    
+    max_retries = 3
+    retry_delay = 2  # seconds
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(f"[DatabaseManager] Connection attempt {attempt}/{max_retries}...")
+            success = await db_manager.connect()
+            if success:
+                logger.info("[DatabaseManager] Connection established successfully on startup!")
+                return True
+        except Exception as e:
+            logger.warning(f"[DatabaseManager] Attempt {attempt} failed: {e}")
+        
+        if attempt < max_retries:
+            logger.info(f"[DatabaseManager] Retrying in {retry_delay}s...")
+            await asyncio.sleep(retry_delay)
+            
+    logger.error("[DatabaseManager] All startup connection attempts failed. Proceeding in degraded mode.")
+    return False
 
 def get_db_status():
     return db_manager.get_status()
+
+async def run_db_migrations():
+    """
+    Normalizes candidates by populating candidate.pipeline_stage based on candidate.status.
+    Ensures that every existing candidate record has pipeline_stage set.
+    """
+    if not db_manager.is_connected or db_manager.db is None:
+        return
+    
+    logger.info("[Migration] Running pipeline stage normalization...")
+    legacy_map = {
+        "pending": "applied",
+        "applied": "applied",
+        "screening": "screening",
+        "shortlisted": "shortlisted",
+        "interview_scheduled": "interview_scheduled",
+        "interview_live": "interview_scheduled",
+        "interview_missed": "interview_scheduled",
+        "interviewed": "interview_completed",
+        "interview_completed": "interview_completed",
+        "selected": "offered",
+        "offered": "offered",
+        "hired": "hired",
+        "rejected": "rejected",
+        "on_hold": "screening"
+    }
+    
+    col = db_manager.db["candidates"]
+    updated_count = 0
+    
+    try:
+        async for candidate in col.find({}):
+            cid = candidate["_id"]
+            status = candidate.get("status", "applied")
+            pipeline_stage = candidate.get("pipeline_stage")
+            
+            # Determine canonical stage
+            canonical_stage = legacy_map.get(status.lower().strip() if status else "", "applied")
+            
+            # If pipeline_stage is not set or differs from the canonical stage, update it
+            if not pipeline_stage or pipeline_stage != canonical_stage or status != canonical_stage:
+                await col.update_one(
+                    {"_id": cid},
+                    {"$set": {"pipeline_stage": canonical_stage, "status": canonical_stage}}
+                )
+                updated_count += 1
+                
+        logger.info(f"[Migration] Pipeline stage normalization completed. Updated {updated_count} candidates.")
+    except Exception as e:
+        logger.error(f"[Migration] Failed to run pipeline stage normalization: {e}")

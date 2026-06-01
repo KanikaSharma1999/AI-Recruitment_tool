@@ -45,7 +45,7 @@ async def update_profile(update: UserUpdate, current_user=Depends(get_current_us
 
 @router.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    if form_data.username != "sandhyagowda506@gmail.com":
+    if form_data.username.strip().lower() != "sandhyagowda506@gmail.com":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access restricted to authorized recruiter."

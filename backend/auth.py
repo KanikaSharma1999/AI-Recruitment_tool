@@ -49,7 +49,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
-        if email != "sandhyagowda506@gmail.com":
+        if email.strip().lower() != "sandhyagowda506@gmail.com":
             raise unauthorized_exception
     except JWTError:
         raise credentials_exception
@@ -57,6 +57,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     user = await users_col.find_one({"email": email})
     if user is None:
         raise credentials_exception
-    if user.get("email") != "sandhyagowda506@gmail.com":
+    if user.get("email", "").strip().lower() != "sandhyagowda506@gmail.com":
         raise unauthorized_exception
     return user

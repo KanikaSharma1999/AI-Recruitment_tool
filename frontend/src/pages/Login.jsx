@@ -22,14 +22,17 @@ export default function Login() {
 
   useEffect(() => {
     API.get('/health').then(res => {
+      // /health now returns 'ok' when connected, 'degraded' or network error when not
+      const overallStatus = res.data?.status;
       const dbStatus = res.data?.database?.status;
-      setIsDbOffline(dbStatus === 'offline');
+      // Treat as offline only when backend is explicitly degraded OR db is not connected
+      setIsDbOffline(overallStatus !== 'ok' || dbStatus === 'offline');
     }).catch(() => setIsDbOffline(true));
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (email.trim() !== 'sandhyagowda506@gmail.com') {
+    if (email.trim().toLowerCase() !== 'sandhyagowda506@gmail.com') {
       toast.error('Access restricted to authorized recruiter.');
       return;
     }
@@ -76,7 +79,7 @@ export default function Login() {
           <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 12, background: 'rgba(99,102,241,0.1)', color: '#818cf8', marginBottom: 16 }}>
             <MdShield size={28} />
           </div>
-          <h1 style={{ fontSize: 26, fontWeight: 900, color: '#fff', margin: 0, letterSpacing: '-0.5px' }}>
+          <h1 style={{ fontSize: 26, fontWeight: 600, color: '#fff', margin: 0, letterSpacing: '-0.5px' }}>
             Hire<span style={{ color: '#818cf8' }}>IQ</span> <span style={{ fontWeight: 400, fontSize: 18, color: '#94a3b8' }}>Recruiter OS</span>
           </h1>
           <p style={{ color: '#94a3b8', fontSize: 13, marginTop: 6, marginBottom: 0 }}>
@@ -143,7 +146,7 @@ export default function Login() {
 
           <button type="submit" className="btn btn-primary"
             disabled={loading || isDbOffline}
-            style={{ padding:'12px', fontSize:15, marginTop:8, justifyContent:'center', background: '#6366f1', border: 'none', color: '#fff', borderRadius: 8, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+            style={{ padding:'12px', fontSize:15, marginTop:8, justifyContent:'center', background: '#6366f1', border: 'none', color: '#fff', borderRadius: 8, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
             {loading ? <span className="spinner" /> : (isDbOffline ? 'Database Offline' : <><MdLogin /> Authenticate Recruiter</>)}
           </button>
         </form>

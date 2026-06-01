@@ -90,6 +90,104 @@ async def check_upcoming_interviews():
     except Exception as e:
         print(f"❌ [Scheduler] Batch processing failed: {e}")
 
+async def check_missed_interviews():
+    """Background task to automatically transition scheduled interviews to missed state after 15 minutes."""
+    if not db_manager.is_connected:
+        return
+    try:
+        from datetime import datetime, timedelta
+        # Find all candidates with interview status == "scheduled"
+        async for candidate in candidates_col.find({"interview.status": "scheduled"}):
+            interview = candidate.get("interview", {})
+            date_str = interview.get("date")
+            time_str = interview.get("time")
+            
+            if not date_str or not time_str:
+                continue
+                
+            try:
+                scheduled_dt = datetime.fromisoformat(f"{date_str}T{time_str}:00")
+                now_local = datetime.now()
+                
+                if now_local > scheduled_dt + timedelta(minutes=15):
+                    print(f"[Scheduler] Auto-marking scheduled interview for {candidate.get('name')} as missed.")
+                    await candidates_col.update_one(
+                        {"_id": candidate["_id"]},
+                        {"$set": {
+                            "interview.status": "missed",
+                            "status": "interview_scheduled",
+                            "pipeline_stage": "interview_scheduled",
+                            "updated_at": datetime.utcnow()
+                        }}
+                    )
+            except Exception as dt_err:
+                print(f"[Scheduler] Failed parsing datetime for candidate {candidate.get('_id')}: {dt_err}")
+                
+    except Exception as e:
+        print(f"❌ [Scheduler] check_missed_interviews failed: {e}")
+
+async def check_expired_sessions():
+    """Background task to automatically complete expired interviews after their duration."""
+    if not db_manager.is_connected:
+        return
+    
+    from database import interview_sessions_col
+    now = datetime.utcnow()
+    
+    try:
+        # Find all LIVE sessions
+        async for session in interview_sessions_col.find({"meeting_status": "LIVE"}):
+            start_time = session.get("start_time")
+            duration_mins = session.get("scheduled_duration", 30)
+            
+            if not start_time:
+                continue
+                
+            elapsed_mins = (now - start_time).total_seconds() / 60.0
+            
+            # Auto-expire after duration + 2 mins grace period
+            if elapsed_mins > (duration_mins + 2):
+                print(f"[Scheduler] Auto-expiring session {session.get('session_id')} for candidate {session.get('candidate_id')}")
+                candidate_id = session.get("candidate_id")
+                
+                # End the session
+                end_time = datetime.utcnow()
+                duration_secs = (end_time - start_time).total_seconds()
+                
+                await interview_sessions_col.update_one(
+                    {"_id": session["_id"]},
+                    {"$set": {
+                        "meeting_status": "COMPLETED",
+                        "end_time": end_time,
+                        "duration": duration_secs
+                    }}
+                )
+                
+                await candidates_col.update_one(
+                    {"_id": ObjectId(candidate_id)},
+                    {"$set": {
+                        "status": "interview_completed",
+                        "pipeline_stage": "interview_completed",
+                        "interview.status": "completed",
+                        "interview.end_time": end_time,
+                        "interview.duration_seconds": duration_secs,
+                        "updated_at": datetime.utcnow()
+                    }}
+                )
+                
+                # Analyze
+                from services.ai_analysis import generate_interview_feedback
+                try:
+                    feedback = await generate_interview_feedback(candidate_id)
+                    await interview_sessions_col.update_one(
+                        {"_id": session["_id"]},
+                        {"$set": {"ai_analysis": feedback}}
+                    )
+                except Exception as e:
+                    print(f"[Scheduler] Failed to auto-analyze candidate {candidate_id}: {e}")
+    except Exception as e:
+        print(f"❌ [Scheduler] check_expired_sessions failed: {e}")
+
 # Global state tracking for background vector sync
 vector_sync_status = {
     "status": "idle",       # "idle", "syncing", "completed", "failed"
@@ -184,55 +282,167 @@ async def run_background_vector_sync():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Print env diagnostics immediately so we can see SMTP config on startup
-    from services.email_service import print_env_diagnostics
-    print_env_diagnostics()
+    import traceback
+    print("==================================================")
+    print("[STARTUP LOGS] FastAPI server starting lifecycle...")
+    print("==================================================")
+    
+    # Global startup try-catch block to prevent any silent crash
+    try:
+        # Print env diagnostics immediately so we can see SMTP config on startup
+        try:
+            from services.email_service import print_env_diagnostics
+            print_env_diagnostics()
+        except Exception as e:
+            print(f"[Startup Warning] print_env_diagnostics failed: {e}")
+            traceback.print_exc()
 
-    # Initialize DB with retries (will not block startup if connection is offline)
-    success = await init_db()
-    if not success:
-        print("[Startup] Application starting in Degraded Mode (Database Offline)")
+        # Initialize DB with retries (will not block startup if connection is offline)
+        try:
+            success = await init_db()
+            if not success:
+                print("[Startup Warning] Application starting in Degraded Mode (Database Offline)")
+        except Exception as e:
+            print(f"[Startup Warning] init_db threw an exception: {e}")
+            traceback.print_exc()
+        
+        # Start background reconnection regardless of initial success
+        try:
+            db_manager.start_background_reconnection()
+        except Exception as e:
+            print(f"[Startup Warning] start_background_reconnection failed: {e}")
+            traceback.print_exc()
+        
+        # Initialize Vector Store (will load existing caches from disk instantly)
+        try:
+            await init_vector_store()
+        except Exception as e:
+            print(f"[Startup Warning] init_vector_store failed: {e}")
+            traceback.print_exc()
+        
+        # Verify sentence-transformers model loads successfully
+        print("[Startup] Verifying SentenceTransformer model (all-MiniLM-L6-v2) load...")
+        try:
+            from sentence_transformers import SentenceTransformer
+            # Force load the model
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            if model is None:
+                raise Exception("Model returned None.")
+            print("[SUCCESS] Embedding model loaded")
+        except Exception as me:
+            print(f"⚠️ [Startup Warning] SentenceTransformer Model Load FAILED: {me}", file=sys.stderr)
+            print("Server will continue running in degraded mode without vector embeddings.", file=sys.stderr)
+            traceback.print_exc()
+        
+        # Background Tasks
+        try:
+            scheduler.add_job(check_upcoming_interviews, 'interval', minutes=1)
+            scheduler.add_job(check_expired_sessions, 'interval', minutes=1)
+            scheduler.add_job(check_missed_interviews, 'interval', minutes=1)
+            scheduler.start()
+        except Exception as e:
+            print(f"[Startup Warning] Scheduler startup failed: {e}")
+            traceback.print_exc()
+        
+        # Vector Sync - run completely non-blocking in background
+        try:
+            asyncio.create_task(run_background_vector_sync())
+        except Exception as e:
+            print(f"[Startup Warning] Vector sync task scheduling failed: {e}")
+            traceback.print_exc()
+            
+    except Exception as ge:
+        print(f"❌ [CRITICAL STARTUP FAILURE] Unexpected error in lifespan startup: {ge}", file=sys.stderr)
+        traceback.print_exc()
 
-    
-    # Start background reconnection regardless of initial success
-    db_manager.start_background_reconnection()
-    
-    # Initialize Vector Store (will load existing caches from disk instantly)
-    await init_vector_store()
-    
-    # Background Task
-    scheduler.add_job(check_upcoming_interviews, 'interval', minutes=1)
-    scheduler.start()
-    
-    # Vector Sync - run completely non-blocking in background
-    asyncio.create_task(run_background_vector_sync())
+    print("==================================================")
+    print("[STARTUP COMPLETE] FastAPI server ready on port 8000")
+    print("==================================================")
     
     yield
-    scheduler.shutdown()
-    db_manager.stop_background_reconnection()
+    
+    # Cleanup lifecycle events
+    print("==================================================")
+    print("[SHUTDOWN LOGS] FastAPI server stopping lifecycle...")
+    print("==================================================")
+    
+    try:
+        scheduler.shutdown()
+    except Exception as e:
+        print(f"[Shutdown Warning] Scheduler shutdown failed: {e}")
+        traceback.print_exc()
+        
+    try:
+        db_manager.stop_background_reconnection()
+    except Exception as e:
+        print(f"[Shutdown Warning] stop_background_reconnection failed: {e}")
+        traceback.print_exc()
 
 
 app = FastAPI(title="ATS Platform API", version="1.0.0", lifespan=lifespan)
 
-# Health Check Endpoint
+# ─── Health Check Endpoints ──────────────────────────────────────────────────
+
 @app.get("/health")
 async def health_check():
+    """
+    Primary health endpoint polled by SystemStatusBanner every 15s.
+    MUST return status='ok' (not 'healthy') for the frontend banner to clear.
+    Includes database status so the banner gets full context in a single request.
+    """
+    from database import get_db_status
+    from services.vector_store import get_store_stats
+
+    try:
+        db_status = get_db_status()
+    except Exception:
+        db_status = {"status": "offline", "last_error": "status check failed"}
+
+    try:
+        vector_stats = get_store_stats()
+    except Exception:
+        vector_stats = {"ready": False, "resumes": 0}
+
+    is_db_ok = db_status.get("status") == "connected"
+
+    return {
+        "status": "ok" if is_db_ok else "degraded",
+        "database": db_status,
+        "vector_store": {
+            **vector_stats,
+            "sync_status": vector_sync_status
+        },
+        "scheduler": "running" if scheduler.running else "stopped"
+    }
+
+
+@app.get("/health/details")
+async def health_details():
+    """Detailed diagnostic endpoint — same as /health but also includes email status."""
     from database import get_db_status
     from services.vector_store import get_store_stats
     from services.email_service import get_db_email_settings
-    
-    db_status = get_db_status()
-    vector_stats = get_store_stats()
-    
-    # Check if email is configured
+
+    try:
+        db_status = get_db_status()
+    except Exception:
+        db_status = {"status": "offline", "last_error": "status check failed"}
+
+    try:
+        vector_stats = get_store_stats()
+    except Exception:
+        vector_stats = {"ready": False, "resumes": 0}
+
     try:
         email_settings = await get_db_email_settings()
         email_status = "configured" if email_settings else "demo_fallback"
-    except:
+    except Exception:
         email_status = "unavailable"
 
+    is_db_ok = db_status.get("status") == "connected"
+
     return {
-        "status": "ok" if db_status["status"] == "connected" else "degraded",
+        "status": "ok" if is_db_ok else "degraded",
         "database": db_status,
         "vector_store": {
             **vector_stats,
@@ -250,6 +460,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from fastapi.staticfiles import StaticFiles
+os.makedirs("uploads", exist_ok=True)
+os.makedirs("uploads/recordings", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 
 # ─────────────────────────── DEBUG ────────────────────────────────────────────
 
@@ -378,6 +594,8 @@ from routes.settings import router as settings_router
 app.include_router(settings_router)
 from routes.auth import router as auth_router
 app.include_router(auth_router)
+from routes.interview_tokens import router as interview_tokens_router
+app.include_router(interview_tokens_router)
 
 
 def serialize(doc: dict) -> dict:
@@ -499,15 +717,44 @@ async def rank_resumes(
     if not candidates:
         raise HTTPException(status_code=400, detail="No candidates found for this job")
 
-    ranked = await rank_all_resumes(job["description"], candidates)
+    # JD Verification (Phase 2)
+    jd_text = job.get("description", "")
+    if not jd_text or not jd_text.strip():
+        # Awaiting JD status updates
+        for c in candidates:
+            cid = c["_id"]
+            update_fields = {
+                "ai_match_score": None,
+                "ai_verdict": "Awaiting JD",
+                "score": 0.0,
+                "semantic_score": None,
+                "skills_score": None,
+                "skill_score": 0.0,
+                "experience_score": None,
+                "projects_score": None,
+                "certification_score": None,
+                "last_ranked_at": datetime.utcnow(),
+                "ranking_error": "Missing JD"
+            }
+            res = await candidates_col.update_one(
+                {"_id": cid},
+                {"$set": update_fields}
+            )
+            if res.matched_count == 0:
+                print("[FAILURE] Reason: Mongo update failed - candidate not found")
+            else:
+                print("[SUCCESS] Candidate ranking saved")
+        return {"ranked": 0, "message": "Ranking skipped, no JD found"}
+
+    ranked = await rank_all_resumes(jd_text, candidates)
 
     for item in ranked:
         cid = item["_id"]
-        feedback = get_resume_feedback(item.get("raw_text", ""), job["description"])
+        feedback = get_resume_feedback(item.get("raw_text", ""), jd_text)
 
         # Generate AI hiring summary
         hiring_sum = item.get("hiring_summary", {})
-        if not hiring_sum:
+        if not hiring_sum or not hiring_sum.get("narrative"):
             try:
                 hiring_sum = await generate_hiring_summary(
                     candidate=item,
@@ -517,37 +764,60 @@ async def rank_resumes(
             except Exception as hs_err:
                 print(f"[HiringSummary] Failed for {item.get('name')}: {hs_err}")
 
-        await candidates_col.update_one(
+        # Map correct fields according to Phase 3
+        ai_verdict = item.get("ai_verdict")
+        if not ai_verdict:
+            ai_verdict = hiring_sum.get("recommendation", "Hold") if hiring_sum else "Hold"
+            
+        update_fields = {
+            "ai_match_score":        item.get("ai_match_score"),
+            "ai_verdict":            ai_verdict,
+            "score":                 item.get("score", 0.0),
+            "semantic_score":        item.get("semantic_score"),
+            "skills_score":          item.get("skills_score"),
+            "skill_score":           item.get("skill_score", 0.0),
+            "experience_score":      item.get("experience_score"),
+            "projects_score":        item.get("projects_score"),
+            "certification_score":   item.get("certification_score"),
+            "certifications_score":  item.get("certifications_score", 0.0),
+            "last_ranked_at":        datetime.utcnow(),
+            
+            # backward compatibility / details
+            "technical_fit":         item.get("technical_fit", 0),
+            "experience_relevance":  item.get("experience_relevance", 0),
+            "resume_quality":        item.get("resume_quality", 0),
+            "risk_flags":            item.get("risk_flags", []),
+            "matched_skills":        item.get("matched_skills", []),
+            "missing_skills":        item.get("missing_skills", []),
+            "exact_matches":         item.get("exact_matches", []),
+            "semantic_matches":      item.get("semantic_matches", []),
+            "partial_matches":       item.get("partial_matches", []),
+            "bonus_skills":          item.get("bonus_skills", []),
+            "match_explanation":     item.get("match_explanation", {}),
+            "feedback":              feedback,
+            "hiring_summary":        hiring_sum,
+            "ranked_at":             datetime.utcnow(),
+            
+            # Upgraded Matching Engine fields
+            "confidence_score":      item.get("confidence_score", 75.0),
+            "ambiguity_detection":   item.get("ambiguity_detection", []),
+            "extraction_reliability":item.get("extraction_reliability", "Medium"),
+            "leadership_match":      item.get("leadership_match", "No"),
+            "communication_match":   item.get("communication_match", "Baseline"),
+            "recruiter_explanation": item.get("recruiter_explanation", ""),
+            "ranking_error":         item.get("ranking_error"),
+            "score_breakdown":       item.get("score_breakdown"),
+        }
+
+        res = await candidates_col.update_one(
             {"_id": cid},
-            {"$set": {
-                "score":                 item["score"],
-                "semantic_score":        item["semantic_score"],
-                "skill_score":           item["skill_score"],
-                "experience_score":      item["experience_score"],
-                "technical_fit":         item.get("technical_fit", 0),
-                "experience_relevance":  item.get("experience_relevance", 0),
-                "resume_quality":        item.get("resume_quality", 0),
-                "risk_flags":            item.get("risk_flags", []),
-                "matched_skills":        item["matched_skills"],
-                "missing_skills":        item["missing_skills"],
-                "exact_matches":         item.get("exact_matches", []),
-                "semantic_matches":      item.get("semantic_matches", []),
-                "partial_matches":       item.get("partial_matches", []),
-                "bonus_skills":          item.get("bonus_skills", []),
-                "match_explanation":     item.get("match_explanation", {}),
-                "feedback":              feedback,
-                "hiring_summary":        hiring_sum,
-                "ranked_at":             datetime.utcnow(),
-                
-                # Upgraded Matching Engine fields
-                "confidence_score":      item.get("confidence_score", 75.0),
-                "ambiguity_detection":   item.get("ambiguity_detection", []),
-                "extraction_reliability":item.get("extraction_reliability", "Medium"),
-                "leadership_match":      item.get("leadership_match", "No"),
-                "communication_match":   item.get("communication_match", "Baseline"),
-                "recruiter_explanation": item.get("recruiter_explanation", ""),
-            }},
+            {"$set": update_fields}
         )
+        if res.matched_count == 0:
+            print("[FAILURE] Reason: Mongo update failed")
+            raise RuntimeError("Mongo update failed: candidate not found")
+        else:
+            print("[SUCCESS] Candidate ranking saved")
         # Update FAISS metadata with new score
         try:
             from services.vector_store import index_resume
@@ -565,6 +835,228 @@ async def rank_resumes(
     return {"ranked": len(ranked), "message": "Ranking complete"}
 
 
+@app.post("/admin/rerank-all")
+async def admin_rerank_all(
+    current_user=Depends(get_current_user),
+):
+    from config import UPLOAD_DIR
+    from services.llm_parser import parse_resume_with_llm
+    
+    # 1. Fetch all jobs and candidates
+    jobs = await jobs_col.find({}).to_list(None)
+    job_map = {str(j["_id"]): j for j in jobs}
+    
+    candidates = await candidates_col.find({}).to_list(None)
+    
+    reranked_count = 0
+    from collections import defaultdict
+    candidates_by_job = defaultdict(list)
+    for c in candidates:
+        job_id = c.get("job_id")
+        if job_id:
+            candidates_by_job[str(job_id)].append(c)
+            
+    # For candidates without a job_id: Update them to Awaiting JD status
+    no_job_candidates = [c for c in candidates if not c.get("job_id")]
+    for c in no_job_candidates:
+        cid = c["_id"]
+        update_fields = {
+            "ai_match_score": None,
+            "ai_verdict": "Awaiting JD",
+            "score": 0.0,
+            "semantic_score": None,
+            "skills_score": None,
+            "skill_score": 0.0,
+            "experience_score": None,
+            "projects_score": None,
+            "certification_score": None,
+            "last_ranked_at": datetime.utcnow(),
+            "ranking_error": "Missing JD"
+        }
+        res = await candidates_col.update_one(
+            {"_id": cid},
+            {"$set": update_fields}
+        )
+        if res.matched_count == 0:
+            print("[FAILURE] Reason: Mongo update failed - candidate not found")
+        else:
+            print("[SUCCESS] Candidate ranking saved")
+            
+    for job_id_str, cand_list in candidates_by_job.items():
+        job = job_map.get(job_id_str)
+        if not job or not job.get("description") or not job.get("description").strip():
+            # Awaiting JD case
+            for cand in cand_list:
+                cid = cand["_id"]
+                update_fields = {
+                    "ai_match_score": None,
+                    "ai_verdict": "Awaiting JD",
+                    "score": 0.0,
+                    "semantic_score": None,
+                    "skills_score": None,
+                    "skill_score": 0.0,
+                    "experience_score": None,
+                    "projects_score": None,
+                    "certification_score": None,
+                    "last_ranked_at": datetime.utcnow(),
+                    "ranking_error": "Missing JD"
+                }
+                res = await candidates_col.update_one(
+                    {"_id": cid},
+                    {"$set": update_fields}
+                )
+                if res.matched_count == 0:
+                    print("[FAILURE] Reason: Mongo update failed - candidate not found")
+                else:
+                    print("[SUCCESS] Candidate ranking saved")
+            continue
+            
+        jd_text = job["description"]
+        
+        prepared_candidates = []
+        for cand in cand_list:
+            # 2. Reload parsed resume text
+            resume_path_val = cand.get("resume_path")
+            raw_text = ""
+            if resume_path_val:
+                file_path = UPLOAD_DIR / resume_path_val
+                if not file_path.exists():
+                    stripped = resume_path_val.replace("uploads/", "").replace("uploads\\", "")
+                    file_path = UPLOAD_DIR / stripped
+                
+                if file_path.exists():
+                    try:
+                        with open(file_path, "rb") as f:
+                            file_bytes = f.read()
+                        parsed_file = parse_resume_file(file_bytes, cand.get("filename", "resume.pdf"))
+                        raw_text = parsed_file.get("raw_text", "")
+                        print(f"[RELOAD] Reloaded resume file from disk for candidate: {cand.get('name')}")
+                    except Exception as e:
+                        raw_text = cand.get("raw_text", "")
+                else:
+                    raw_text = cand.get("raw_text", "")
+            
+            if not raw_text:
+                raw_text = cand.get("raw_text", "")
+                
+            # 3. Rerun parser
+            try:
+                candidate_profile = parse_resume_with_llm(raw_text, cand.get("filename", "resume.pdf"))
+                print(f"[PARSER] Ran resume parser for candidate: {cand.get('name')}")
+            except Exception as pe:
+                print(f"[PARSER ERROR] Parsing failed for candidate {cand.get('name')}: {pe}")
+                candidate_profile = {}
+                
+            prepared_cand = {
+                **cand,
+                **candidate_profile,
+                "raw_text": raw_text,
+            }
+            # Remove cached timeline to force rerun extraction logic inside rank_all_resumes
+            prepared_cand.pop("employment_timeline", None)
+            prepared_candidates.append(prepared_cand)
+            
+        if not prepared_candidates:
+            continue
+            
+        # 4. Rerun embeddings & 5. Rerun ranking
+        ranked = await rank_all_resumes(jd_text, prepared_candidates)
+        
+        for item in ranked:
+            cid = item["_id"]
+            feedback = get_resume_feedback(item.get("raw_text", ""), jd_text)
+            
+            # Generate AI hiring summary
+            hiring_sum = item.get("hiring_summary", {})
+            if not hiring_sum or not hiring_sum.get("narrative"):
+                try:
+                    hiring_sum = await generate_hiring_summary(
+                        candidate=item,
+                        job=job,
+                        match_explanation=item.get("match_explanation", {}),
+                    )
+                except Exception:
+                    pass
+            
+            # Map correct fields according to Phase 3
+            ai_verdict = item.get("ai_verdict")
+            if not ai_verdict:
+                ai_verdict = hiring_sum.get("recommendation", "Hold") if hiring_sum else "Hold"
+                
+            update_fields = {
+                "ai_match_score":        item.get("ai_match_score"),
+                "ai_verdict":            ai_verdict,
+                "score":                 item.get("score", 0.0),
+                "semantic_score":        item.get("semantic_score"),
+                "skills_score":          item.get("skills_score"),
+                "skill_score":           item.get("skill_score", 0.0),
+                "experience_score":      item.get("experience_score"),
+                "projects_score":        item.get("projects_score"),
+                "certification_score":   item.get("certification_score"),
+                "certifications_score":  item.get("certifications_score", 0.0),
+                "last_ranked_at":        datetime.utcnow(),
+                
+                # backward compatibility / details
+                "technical_fit":         item.get("technical_fit", 0),
+                "experience_relevance":  item.get("experience_relevance", 0),
+                "resume_quality":        item.get("resume_quality", 0),
+                "risk_flags":            item.get("risk_flags", []),
+                "matched_skills":        item.get("matched_skills", []),
+                "missing_skills":        item.get("missing_skills", []),
+                "exact_matches":         item.get("exact_matches", []),
+                "semantic_matches":      item.get("semantic_matches", []),
+                "partial_matches":       item.get("partial_matches", []),
+                "bonus_skills":          item.get("bonus_skills", []),
+                "match_explanation":     item.get("match_explanation", {}),
+                "feedback":              feedback,
+                "hiring_summary":        hiring_sum,
+                "ranked_at":             datetime.utcnow(),
+                
+                # Upgraded Matching Engine fields
+                "confidence_score":      item.get("confidence_score", 75.0),
+                "ambiguity_detection":   item.get("ambiguity_detection", []),
+                "extraction_reliability":item.get("extraction_reliability", "Medium"),
+                "leadership_match":      item.get("leadership_match", "No"),
+                "communication_match":   item.get("communication_match", "Baseline"),
+                "recruiter_explanation": item.get("recruiter_explanation", ""),
+                "ranking_error":         item.get("ranking_error"),
+                "score_breakdown":       item.get("score_breakdown"),
+            }
+            
+            res = await candidates_col.update_one(
+                {"_id": cid},
+                {"$set": update_fields}
+            )
+            
+            if res.matched_count == 0:
+                print(f"[FAILURE] Reason: Mongo update failed for candidate {item.get('name')}")
+            else:
+                print("[SUCCESS] Candidate ranking saved")
+                
+            try:
+                from services.vector_store import index_resume
+                await index_resume(
+                    candidate_id=str(cid),
+                    name=item.get("name", ""),
+                    text=item.get("raw_text", ""),
+                    extra={"job_id": job_id_str, "score": item["score"],
+                           "status": item.get("status", "pending"),
+                           "skills": item.get("skills", [])},
+                )
+            except Exception:
+                pass
+                
+            reranked_count += 1
+            
+    return {"message": f"Successfully re-ranked {reranked_count} candidates."}
+
+@app.post("/rerank-all-candidates")
+async def rerank_all_candidates(
+    current_user=Depends(get_current_user),
+):
+    return await admin_rerank_all(current_user=current_user)
+
+
 # ─────────────────────── DASHBOARD ─────────────────────────────────────────
 
 @app.get("/dashboard/stats")
@@ -576,19 +1068,43 @@ async def dashboard_stats(
 
     pipeline = [
         {"$match": match_q},
-        {"$group": {"_id": "$status", "count": {"$sum": 1}, "avg_score": {"$avg": "$score"}}},
+        {"$group": {
+            "_id": {"$ifNull": ["$pipeline_stage", "$status"]},
+            "count": {"$sum": 1},
+            "avg_score": {"$avg": {"$ifNull": ["$ai_match_score", "$score"]}}
+        }},
     ]
 
+    legacy_map = {
+        "pending": "applied",
+        "applied": "applied",
+        "screening": "screening",
+        "shortlisted": "shortlisted",
+        "interview_scheduled": "interview_scheduled",
+        "interview_live": "interview_scheduled",
+        "interview_missed": "interview_scheduled",
+        "interviewed": "interview_completed",
+        "interview_completed": "interview_completed",
+        "selected": "offered",
+        "offered": "offered",
+        "hired": "hired",
+        "rejected": "rejected",
+        "on_hold": "screening"
+    }
+
     status_counts = {"applied": 0, "screening": 0, "shortlisted": 0,
-                     "interview_scheduled": 0, "interviewed": 0, "selected": 0, "rejected": 0, "on_hold": 0}
+                     "interview_scheduled": 0, "interview_completed": 0, "offered": 0, "hired": 0, "rejected": 0}
     total = 0
     score_sum = 0.0
 
     async for doc in candidates_col.aggregate(pipeline):
         st = doc["_id"]
+        canonical_st = legacy_map.get(st.lower().strip() if st else "", "applied")
         cnt = doc["count"]
-        if st in status_counts:
-            status_counts[st] = cnt
+        if canonical_st in status_counts:
+            status_counts[canonical_st] += cnt
+        else:
+            status_counts["applied"] += cnt
         total += cnt
         score_sum += (doc.get("avg_score") or 0) * cnt
 
@@ -599,7 +1115,24 @@ async def dashboard_stats(
                  (40, 60, "40-60%"), (60, 80, "60-80%"), (80, 101, "80-100%")]
     score_dist = []
     for low, high, label in brackets:
-        q = {**match_q, "score": {"$gte": low, "$lt": high}}
+        q = {
+            **match_q,
+            "$or": [
+                {"ai_match_score": {"$gte": low, "$lt": high}},
+                {
+                    "$and": [
+                        {"ai_match_score": {"$exists": False}},
+                        {"score": {"$gte": low, "$lt": high}}
+                    ]
+                },
+                {
+                    "$and": [
+                        {"ai_match_score": None},
+                        {"score": {"$gte": low, "$lt": high}}
+                    ]
+                }
+            ]
+        }
         count = await candidates_col.count_documents(q)
         score_dist.append({"range": label, "count": count})
 
@@ -608,8 +1141,8 @@ async def dashboard_stats(
     now_utc = datetime.utcnow()
     
     cursor = candidates_col.find(
-        {"status": "interview_scheduled", **match_q},
-        {"name": 1, "interview": 1, "job_id": 1}
+        {"status": {"$in": ["interview_scheduled", "interview_live", "interview_completed", "interview_analyzed", "interview_missed"]}, **match_q},
+        {"name": 1, "interview": 1, "job_id": 1, "status": 1}
     )
     
     async for c in cursor:
@@ -627,19 +1160,29 @@ async def dashboard_stats(
             interview_dt = None
         
         # Compute status label relative to now (UTC used as base)
+        candidate_status = c.get("status")
         interview_status = "upcoming"
         countdown = None
-        if interview_dt:
+        
+        if candidate_status == "interview_live" or interview.get("status") == "live":
+            interview_status = "live"
+            countdown = "Session Active"
+        elif candidate_status in ["interview_completed", "interview_analyzed"] or interview.get("status") == "completed":
+            interview_status = "completed"
+        elif candidate_status == "interview_missed":
+            interview_status = "missed"
+        elif interview_dt:
             diff_minutes = (interview_dt - now_utc).total_seconds() / 60
             diff_days = diff_minutes / (60 * 24)
             
             if diff_minutes < -30:
                 interview_status = "overdue"
                 # Also patch candidate status to missed
-                await candidates_col.update_one(
-                    {"_id": c["_id"], "status": "interview_scheduled"},
-                    {"$set": {"status": "interview_missed"}}
-                )
+                if candidate_status == "interview_scheduled":
+                    await candidates_col.update_one(
+                        {"_id": c["_id"], "status": "interview_scheduled"},
+                        {"$set": {"status": "interview_missed", "interview.status": "missed"}}
+                    )
             elif diff_minutes < 0:
                 interview_status = "missed"
             elif diff_minutes <= 60:
@@ -785,3 +1328,55 @@ async def download_report(
         )
     else:
         raise HTTPException(status_code=400, detail="format must be 'csv' or 'pdf'")
+
+
+def kill_port_8000():
+    import subprocess
+    import os
+    print("[Startup] Checking for processes occupying port 8000...")
+    try:
+        # Run netstat to find PIDs listening on port 8000
+        result = subprocess.run(
+            ["netstat", "-ano"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+        pids_to_kill = set()
+        # Look for lines containing ':8000' and extract the PID at the end of the line
+        for line in result.stdout.splitlines():
+            if ":8000" in line and "LISTENING" in line:
+                parts = line.strip().split()
+                if len(parts) >= 5:
+                    pid = parts[-1]
+                    try:
+                        pids_to_kill.add(int(pid))
+                    except ValueError:
+                        pass
+        
+        my_pid = os.getpid()
+        for pid in pids_to_kill:
+            if pid == my_pid:
+                continue
+            print(f"[Startup] Found process {pid} using port 8000. Killing it...")
+            try:
+                # Force kill process
+                subprocess.run(["taskkill", "/F", "/PID", str(pid)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                print(f"[Startup] Successfully killed process {pid}.")
+            except Exception as kill_err:
+                print(f"[Startup] Failed to kill process {pid}: {kill_err}")
+    except Exception as e:
+        print(f"[Startup] Error checking/killing port 8000 processes: {e}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    # Clean up port 8000 before starting
+    kill_port_8000()
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False
+    )

@@ -74,7 +74,28 @@ async def list_candidates(
     if job_id:
         query["job_id"] = job_id
     if status_filter:
-        query["status"] = status_filter
+        legacy_map = {
+            "pending": "applied",
+            "applied": "applied",
+            "screening": "screening",
+            "shortlisted": "shortlisted",
+            "interview_scheduled": "interview_scheduled",
+            "interview_live": "interview_scheduled",
+            "interview_missed": "interview_scheduled",
+            "interviewed": "interview_completed",
+            "interview_completed": "interview_completed",
+            "selected": "offered",
+            "offered": "offered",
+            "hired": "hired",
+            "rejected": "rejected",
+            "on_hold": "screening"
+        }
+        canonical = legacy_map.get(status_filter.lower().strip(), status_filter)
+        query["$or"] = [
+            {"pipeline_stage": canonical},
+            {"status": canonical},
+            {"status": status_filter}
+        ]
     if min_score is not None or max_score is not None:
         query["score"] = {}
         if min_score is not None:
@@ -256,8 +277,27 @@ async def update_status(
     from database import jobs_col
     from services.email_service import send_email, get_status_update_template
     
-    valid = ["applied", "screening", "shortlisted", "interview_scheduled", "interviewed", "selected", "rejected", "on_hold"]
-    if update.status not in valid:
+    valid = ["applied", "screening", "shortlisted", "interview_scheduled", "interview_completed", "offered", "hired", "rejected"]
+    legacy_map = {
+        "pending": "applied",
+        "applied": "applied",
+        "screening": "screening",
+        "shortlisted": "shortlisted",
+        "interview_scheduled": "interview_scheduled",
+        "interview_live": "interview_scheduled",
+        "interview_missed": "interview_scheduled",
+        "interviewed": "interview_completed",
+        "interview_completed": "interview_completed",
+        "selected": "offered",
+        "offered": "offered",
+        "hired": "hired",
+        "rejected": "rejected",
+        "on_hold": "screening"
+    }
+    
+    status_lower = update.status.lower().strip()
+    stage = legacy_map.get(status_lower)
+    if not stage:
         raise HTTPException(status_code=400, detail=f"Status must be one of: {valid}")
 
     candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
@@ -265,33 +305,18 @@ async def update_status(
         raise HTTPException(status_code=404, detail="Candidate not found")
         
     activity = {
-        "action": f"Moved to {update.status}",
+        "action": f"Moved to {stage}",
         "timestamp": datetime.utcnow().isoformat(),
         "author": current_user["name"]
     }
     
     result = await candidates_col.update_one(
         {"_id": ObjectId(candidate_id)},
-        {"$set": {"status": update.status, "updated_at": datetime.utcnow()},
+        {"$set": {"pipeline_stage": stage, "status": stage, "updated_at": datetime.utcnow()},
          "$push": {"activity_history": activity}},
     )
     
-    # Email to candidate is explicitly disabled based on user request (HR productivity focus)
-    # if result.matched_count > 0 and update.status in ["shortlisted", "rejected"]:
-    #     from services.email_service import get_db_email_settings, get_fallback_settings
-    #     settings = await get_db_email_settings() or get_fallback_settings()
-    #     app_name = settings.get("app_name", "AI Hiring Platform")
-    #
-    #     job = await jobs_col.find_one({"_id": ObjectId(candidate.get("job_id"))})
-    #     html = get_status_update_template(
-    #         candidate["name"],
-    #         job.get("title", "Job Role") if job else "Job Role",
-    #         update.status,
-    #         app_name
-    #     )
-    #     await send_email(candidate.get("email"), f"Update on your application: {job.get('title', 'Role') if job else ''}", html)
-
-    return {"message": f"Status updated to '{update.status}'"}
+    return {"message": f"Status updated to '{stage}'"}
 
 from pydantic import BaseModel
 from typing import List
@@ -305,25 +330,44 @@ async def bulk_update_status(
     update: BulkStatusUpdate,
     current_user=Depends(get_current_user),
 ):
-    valid = ["applied", "screening", "shortlisted", "interview_scheduled", "interviewed", "selected", "rejected", "on_hold"]
-    if update.status not in valid:
+    valid = ["applied", "screening", "shortlisted", "interview_scheduled", "interview_completed", "offered", "hired", "rejected"]
+    legacy_map = {
+        "pending": "applied",
+        "applied": "applied",
+        "screening": "screening",
+        "shortlisted": "shortlisted",
+        "interview_scheduled": "interview_scheduled",
+        "interview_live": "interview_scheduled",
+        "interview_missed": "interview_scheduled",
+        "interviewed": "interview_completed",
+        "interview_completed": "interview_completed",
+        "selected": "offered",
+        "offered": "offered",
+        "hired": "hired",
+        "rejected": "rejected",
+        "on_hold": "screening"
+    }
+    
+    status_lower = update.status.lower().strip()
+    stage = legacy_map.get(status_lower)
+    if not stage:
         raise HTTPException(status_code=400, detail=f"Status must be one of: {valid}")
 
     object_ids = [ObjectId(cid) for cid in update.candidate_ids]
     
     activity = {
-        "action": f"Bulk moved to {update.status}",
+        "action": f"Bulk moved to {stage}",
         "timestamp": datetime.utcnow().isoformat(),
         "author": current_user["name"]
     }
 
     result = await candidates_col.update_many(
         {"_id": {"$in": object_ids}},
-        {"$set": {"status": update.status, "updated_at": datetime.utcnow()},
+        {"$set": {"pipeline_stage": stage, "status": stage, "updated_at": datetime.utcnow()},
          "$push": {"activity_history": activity}},
     )
 
-    return {"message": f"Status updated to '{update.status}' for {result.modified_count} candidates"}
+    return {"message": f"Status updated to '{stage}' for {result.modified_count} candidates"}
 
 
 @router.post("/{candidate_id}/notes")

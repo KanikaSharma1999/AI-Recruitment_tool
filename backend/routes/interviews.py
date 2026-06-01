@@ -4,7 +4,7 @@ from bson import ObjectId
 from datetime import datetime
 import uuid
 
-from database import candidates_col
+from database import candidates_col, interview_sessions_col
 from auth import get_current_user
 from pydantic import BaseModel
 
@@ -16,10 +16,18 @@ class InterviewSchedule(BaseModel):
     mode: str          # "online" | "offline"
     location: Optional[str] = ""
     notes: Optional[str] = ""
+    duration: Optional[int] = 30
 
 class InterviewFeedbackCreate(BaseModel):
     candidate_id: str
     hr_notes: str
+
+class InterviewStartRequest(BaseModel):
+    candidate_id: str
+    duration: Optional[int] = 30
+
+class AnalyzeRequest(BaseModel):
+    candidate_id: str
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
 
@@ -30,7 +38,21 @@ async def schedule_interview(
 ):
     candidate_id = interview.candidate_id
     
-    room_name = f"interview-{candidate_id}-{uuid.uuid4().hex[:8]}"
+    # Check if there is already an interview scheduled at the same date and time
+    existing_booking = await candidates_col.find_one({
+        "interview.date": interview.date,
+        "interview.time": interview.time,
+        "interview.status": "scheduled"
+    })
+    if existing_booking:
+        raise HTTPException(
+            status_code=400,
+            detail="This time slot is already booked. Please select a different time."
+        )
+        
+    import random
+    random_id = random.randint(10000000, 99999999)
+    room_name = f"interview-{candidate_id}-{random_id}"
     meeting_link = f"https://meet.jit.si/{room_name}"
     
     from services.email_service import send_email, get_interview_scheduled_template
@@ -43,6 +65,8 @@ async def schedule_interview(
     from services.notification_service import notification_service
     
     interview_data = interview.model_dump()
+    secure_token = uuid.uuid4().hex
+    interview_data["secure_token"] = secure_token
     interview_data["meeting_link"] = meeting_link
     interview_data["status"] = "scheduled"
     interview_data["scheduled_at"] = datetime.utcnow()
@@ -53,6 +77,7 @@ async def schedule_interview(
         {"_id": ObjectId(candidate_id)},
         {"$set": {
             "status": "interview_scheduled",
+            "pipeline_stage": "interview_scheduled",
             "interview": interview_data,
             "scheduled_by_email": current_user.get("email"),  # top-level for easy querying
             "updated_at": datetime.utcnow(),
@@ -83,19 +108,20 @@ async def schedule_interview(
         from services.email_service import send_email, get_db_email_settings, get_fallback_settings
         settings = await get_db_email_settings() or get_fallback_settings()
         
-        c_score = round(candidate.get('score', 0))
+        score_val = candidate.get('score')
+        c_score = round(score_val) if isinstance(score_val, (int, float)) else 0
         c_email = candidate.get('email', 'N/A')
         job_role = job.get('title', 'Job Role') if job else 'Job Role'
         
-        hs = candidate.get("hiring_summary", {})
-        ai = candidate.get("ai_analysis", {})
-        c_summary = hs.get("summary", ai.get("executive_summary", "Candidate demonstrates strong technical and operational alignment with the role requirements."))
+        hs = candidate.get("hiring_summary") or {}
+        ai = candidate.get("ai_analysis") or {}
+        c_summary = hs.get("narrative") or hs.get("summary") or ai.get("executive_summary") or "Candidate demonstrates strong technical and operational alignment with the role requirements."
         if not c_summary or c_summary == "N/A" or "No summary available" in c_summary:
             c_summary = "Candidate demonstrates strong technical and operational alignment with the role requirements."
             
-        matched_skills = candidate.get("matched_skills", [])
+        matched_skills = candidate.get("matched_skills") or []
         if not matched_skills:
-            matched_skills = candidate.get("skills", [])
+            matched_skills = candidate.get("skills") or []
         c_skills = ", ".join(matched_skills[:5]) if matched_skills else "General competency"
         
         hr_html = f"""
@@ -232,36 +258,319 @@ class FaceStatsCreate(BaseModel):
     posture_shift: Optional[int] = 0
     presence: Optional[bool] = True
     suspicious_events: Optional[list] = []
+    smiling_count: Optional[int] = 0
+    talking_count: Optional[int] = 0
+    anxious_count: Optional[int] = 0
+
+class ProctoringViolation(BaseModel):
+    candidate_id: str
+    violation_type: str   # "tab_switch" | "fullscreen_exit" | "copy_paste" | "face_absent" | "multiple_faces" | "inactivity" | "window_blur"
+    severity: str = "medium"  # "low" | "medium" | "high"
+    details: Optional[str] = ""
+    count: Optional[int] = 1
+
+@router.post("/proctoring-event")
+async def record_proctoring_event(violation: ProctoringViolation):
+    """Record a real-time anti-cheating violation event from the candidate's browser."""
+    event = {
+        "violation_type": violation.violation_type,
+        "severity": violation.severity,
+        "details": violation.details,
+        "count": violation.count,
+        "timestamp": datetime.utcnow(),
+    }
+
+    await candidates_col.update_one(
+        {"_id": ObjectId(violation.candidate_id)},
+        {
+            "$push": {"proctoring_violations": event},
+            "$inc": {f"proctoring_counts.{violation.violation_type}": violation.count},
+        }
+    )
+    await interview_sessions_col.update_one(
+        {"candidate_id": violation.candidate_id, "meeting_status": "LIVE"},
+        {"$push": {"proctoring_violations": event}}
+    )
+    return {"recorded": True}
+
+@router.get("/proctoring-live/{candidate_id}")
+async def get_live_proctoring(candidate_id: str, current_user=Depends(get_current_user)):
+    """Recruiter polls this for live proctoring status."""
+    candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    violations = candidate.get("proctoring_violations", [])
+    counts = candidate.get("proctoring_counts", {})
+
+    # Fetch live transcript from the active interview session
+    session = await interview_sessions_col.find_one({
+        "candidate_id": candidate_id,
+        "meeting_status": "LIVE"
+    })
+    transcript = session.get("transcript", []) if session else []
+
+    # Filter out system sync events when calculating integrity violations
+    non_violation_types = [
+        "candidate_joined",
+        "candidate_left",
+        "video_muted",
+        "video_active",
+        "mic_muted",
+        "mic_active"
+    ]
+    
+    violation_counts = {
+        k: v for k, v in counts.items() 
+        if k not in non_violation_types
+    } if counts else {}
+    
+    total_violations = sum(violation_counts.values())
+    
+    actual_violations = [v for v in violations if v.get("violation_type") not in non_violation_types]
+    high_sev = sum(1 for v in actual_violations if v.get("severity") == "high")
+    integrity_score = max(0, 100 - (total_violations * 5) - (high_sev * 10))
+
+    # Speaking Ratio live calculation
+    total_candidate_words = 0
+    total_interviewer_words = 0
+    for chunk in transcript:
+        if isinstance(chunk, dict):
+            text = chunk.get("text", "")
+            speaker = chunk.get("speaker", "Candidate")
+        else:
+            text = str(chunk)
+            speaker = "Candidate"
+        words = len(text.split())
+        if speaker == "Interviewer":
+            total_interviewer_words += words
+        else:
+            total_candidate_words += words
+            
+    total_words = total_candidate_words + total_interviewer_words
+    speaking_ratio = {
+        "candidate": round((total_candidate_words / total_words) * 100, 1) if total_words > 0 else 50.0,
+        "interviewer": round((total_interviewer_words / total_words) * 100, 1) if total_words > 0 else 50.0
+    }
+
+    # Webcam Activity Status (sync with Jitsi events)
+    video_events = [v for v in violations if v.get("violation_type") in ["video_muted", "video_active"]]
+    if video_events:
+        webcam_status = "Muted" if video_events[-1].get("violation_type") == "video_muted" else "Active"
+    else:
+        face_stats = candidate.get("face_stats", [])
+        if face_stats:
+            last_stat = face_stats[-1]
+            webcam_status = "Active" if last_stat.get("presence", True) else "No Face Detected"
+        else:
+            webcam_status = "No Feed"
+
+    # Silence Detection (sync with Jitsi events)
+    mic_events = [v for v in violations if v.get("violation_type") in ["mic_muted", "mic_active", "long_silence"]]
+    if mic_events:
+        has_recent_silence = mic_events[-1].get("violation_type") in ["mic_muted", "long_silence"]
+    else:
+        has_recent_silence = any(v.get("violation_type") == "long_silence" for v in violations[-3:])
+
+    return {
+        "violations": violations[-20:],  # last 20
+        "counts": counts,
+        "total_violations": total_violations,
+        "integrity_score": integrity_score,
+        "risk_level": "high" if integrity_score < 50 else "medium" if integrity_score < 75 else "low",
+        "transcript": transcript,
+        "speaking_ratio": speaking_ratio,
+        "webcam_status": webcam_status,
+        "silence_detected": has_recent_silence,
+    }
+
+@router.post("/start")
+async def start_interview(
+    req: InterviewStartRequest,
+    current_user=Depends(get_current_user),
+):
+    candidate = await candidates_col.find_one({"_id": ObjectId(req.candidate_id)})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+        
+    interview_info = candidate.get("interview") or {}
+    current_status = interview_info.get("status") or "scheduled"
+    
+    # State check: Recruiter can only start if scheduled, candidate_joined or already live (for resume/rejoin)
+    if current_status not in ["scheduled", "candidate_joined", "live"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot start interview. Invalid current status: '{current_status}'. Only scheduled or candidate joined interviews can be started."
+        )
+
+    # Enforce start window (limit: up to 15 minutes past scheduled start time)
+    if interview_info.get("date") and interview_info.get("time"):
+        try:
+            sched_date = interview_info["date"]
+            sched_time = interview_info["time"]
+            scheduled_dt = datetime.fromisoformat(f"{sched_date}T{sched_time}:00")
+            
+            from datetime import timedelta
+            now_local = datetime.now()
+            
+            if now_local > scheduled_dt + timedelta(minutes=15):
+                raise HTTPException(
+                    status_code=400,
+                    detail="This interview session has expired. The start window was within 15 minutes of the scheduled time."
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[Start Interview] Error checking start window: {e}")
+
+    # Prevent duplicate live session creation on page refresh/rejoin
+    if interview_info.get("status") == "live" or candidate.get("status") == "interview_live":
+        active_session = await interview_sessions_col.find_one({
+            "candidate_id": req.candidate_id,
+            "meeting_status": "LIVE"
+        })
+        if active_session:
+            return {
+                "message": "Resuming live interview session",
+                "session_id": active_session["session_id"]
+            }
+
+    session_id = str(uuid.uuid4())
+    start_time = datetime.utcnow()
+    
+    # Store session state in interview_sessions collection
+    session_doc = {
+        "session_id": session_id,
+        "candidate_id": req.candidate_id,
+        "job_id": candidate.get("job_id"),
+        "recruiter_email": current_user.get("email"),
+        "start_time": start_time,
+        "end_time": None,
+        "recruiter_joined": True,
+        "candidate_joined": True,
+        "meeting_status": "LIVE",
+        "scheduled_duration": req.duration,
+        "meeting_link": interview_info.get("meeting_link"),
+        "transcript": [],
+        "face_stats": [],
+    }
+    await interview_sessions_col.insert_one(session_doc)
+    
+    # Update candidate state to LIVE
+    await candidates_col.update_one(
+        {"_id": ObjectId(req.candidate_id)},
+        {"$set": {
+            "status": "interview_live",
+            "interview.status": "live",
+            "interview.session_id": session_id,
+            "interview.start_time": start_time,
+            "interview.recruiter_joined": True,
+            "interview.candidate_joined": True,
+            "updated_at": datetime.utcnow()
+        }}
+    )
+    
+    return {"message": "Interview started", "session_id": session_id}
+
+@router.post("/end")
+async def end_interview(
+    req: AnalyzeRequest,
+    current_user=Depends(get_current_user),
+):
+    candidate = await candidates_col.find_one({"_id": ObjectId(req.candidate_id)})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+        
+    session = await interview_sessions_col.find_one({
+        "candidate_id": req.candidate_id,
+        "meeting_status": "LIVE"
+    })
+    
+    end_time = datetime.utcnow()
+    duration_secs = 0.0
+    if session:
+        duration_secs = (end_time - session["start_time"]).total_seconds()
+        await interview_sessions_col.update_one(
+            {"_id": session["_id"]},
+            {"$set": {
+                "meeting_status": "COMPLETED",
+                "end_time": end_time,
+                "duration": duration_secs
+            }}
+        )
+    else:
+        start_time = candidate.get("interview", {}).get("start_time")
+        if start_time:
+            if isinstance(start_time, str):
+                start_time = datetime.fromisoformat(start_time)
+            duration_secs = (end_time - start_time).total_seconds()
+            
+    # Update candidate state to COMPLETED
+    await candidates_col.update_one(
+        {"_id": ObjectId(req.candidate_id)},
+        {"$set": {
+            "status": "interview_completed",
+            "pipeline_stage": "interview_completed",
+            "interview.status": "completed",
+            "interview.end_time": end_time,
+            "interview.duration_seconds": duration_secs,
+            "updated_at": datetime.utcnow()
+        }}
+    )
+    
+    # Trigger AI analysis pipeline
+    import sys
+    import os
+    sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+    from services.ai_analysis import generate_interview_feedback
+    
+    try:
+        feedback = await generate_interview_feedback(req.candidate_id)
+        if session:
+            await interview_sessions_col.update_one(
+                {"_id": session["_id"]},
+                {"$set": {"ai_analysis": feedback}}
+            )
+        return {"message": "Interview completed and analyzed", "feedback": feedback}
+    except Exception as e:
+        print(f"[Interview End Error] Analysis failed: {e}")
+        return {"message": "Interview completed, analysis failed", "error": str(e)}
 
 @router.post("/face-stats")
 async def add_face_stats(stats: FaceStatsCreate):
+    stat_entry = {
+        "looking_away_count": stats.looking_away_count,
+        "no_face_count": stats.no_face_count,
+        "multiple_faces_count": stats.multiple_faces_count,
+        "tab_switches": stats.tab_switches,
+        "copy_paste_count": stats.copy_paste_count,
+        "posture_shift": stats.posture_shift,
+        "presence": stats.presence,
+        "suspicious_events": stats.suspicious_events,
+        "smiling_count": stats.smiling_count or 0,
+        "talking_count": stats.talking_count or 0,
+        "anxious_count": stats.anxious_count or 0,
+        "timestamp": datetime.utcnow()
+    }
+    
     # Appends new face stats reading to the candidate doc
     await candidates_col.update_one(
         {"_id": ObjectId(stats.candidate_id)},
-        {"$push": {
-            "face_stats": {
-                "looking_away_count": stats.looking_away_count,
-                "no_face_count": stats.no_face_count,
-                "multiple_faces_count": stats.multiple_faces_count,
-                "tab_switches": stats.tab_switches,
-                "copy_paste_count": stats.copy_paste_count,
-                "posture_shift": stats.posture_shift,
-                "presence": stats.presence,
-                "suspicious_events": stats.suspicious_events,
-                "timestamp": datetime.utcnow()
-            }
-        }}
+        {"$push": {"face_stats": stat_entry}}
     )
+    
+    # Appends to the active session
+    await interview_sessions_col.update_one(
+        {"candidate_id": stats.candidate_id, "meeting_status": "LIVE"},
+        {"$push": {"face_stats": stat_entry}}
+    )
+    
     return {"message": "Stats recorded"}
-
-class AnalyzeRequest(BaseModel):
-    candidate_id: str
 
 @router.post("/analyze")
 async def analyze_interview(req: AnalyzeRequest):
     import sys
     import os
-    # Add services folder to path if needed
     sys.path.append(os.path.abspath(os.path.dirname(__file__)))
     from services.ai_analysis import generate_interview_feedback
     
@@ -422,4 +731,33 @@ async def generate_interview_questions(
         "total": len(questions),
         "questions": questions,
         "generated_by": "cohere" if questions and len(questions) >= 8 else "template",
+    }
+
+
+@router.get("/token/{secure_token}")
+async def get_interview_by_secure_token(secure_token: str):
+    """
+    Public endpoint to resolve a secure interview token.
+    Returns candidate, job and meeting metadata.
+    """
+    from database import jobs_col
+    import os
+    candidate = await candidates_col.find_one({"interview.secure_token": secure_token})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Invalid interview token or session has expired")
+
+    job = await jobs_col.find_one({"_id": ObjectId(candidate["job_id"])})
+    
+    interview = candidate.get("interview", {})
+    return {
+        "candidate_id": str(candidate["_id"]),
+        "candidate_name": candidate.get("name"),
+        "candidate_email": candidate.get("email"),
+        "job_title": job.get("title", "Software Engineer") if job else "Software Engineer",
+        "meeting_link": interview.get("meeting_link"),
+        "date": interview.get("date"),
+        "time": interview.get("time"),
+        "status": interview.get("status"),
+        "duration": interview.get("duration", 30),
+        "jitsi_domain": os.getenv("JITSI_DOMAIN", "meet.jit.si")
     }

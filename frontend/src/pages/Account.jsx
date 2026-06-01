@@ -88,7 +88,7 @@ export default function Account() {
 
                 <div className="divider" />
                 
-                <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: -4 }}>Change Password</h4>
+                <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: -4 }}>Change Password</h4>
                 <p className="text-muted text-sm">Leave blank to keep your current password.</p>
 
                 <div className="form-grid">

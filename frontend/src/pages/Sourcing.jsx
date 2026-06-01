@@ -38,7 +38,7 @@ export default function Sourcing() {
           
           <div className="flex-between page-header" style={{ marginBottom: 24 }}>
             <div>
-              <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1e293b' }}>Global Talent Database</h1>
+              <h1 style={{ fontSize: 24, fontWeight: 600, color: '#1e293b' }}>Global Talent Database</h1>
               <p style={{ color: '#64748b', fontSize: 14 }}>Semantic AI search across all resumes in your ATS</p>
             </div>
           </div>
@@ -82,7 +82,7 @@ export default function Sourcing() {
                <div style={{ width: 64, height: 64, background: '#f8fafc', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
                  <MdPeople size={32} color="#94a3b8" />
                </div>
-               <h3 style={{ fontSize: 18, fontWeight: 700, color: '#334155', marginBottom: 8 }}>Search your entire talent pool</h3>
+               <h3 style={{ fontSize: 18, fontWeight: 600, color: '#334155', marginBottom: 8 }}>Search your entire talent pool</h3>
                <p style={{ color: '#64748b', maxWidth: 400, margin: '0 auto', fontSize: 14, lineHeight: 1.6 }}>
                  Enter skills, roles, or natural language descriptions. The AI will instantly search across all resumes, even those in past pipelines.
                </p>
@@ -97,7 +97,7 @@ export default function Sourcing() {
           ) : (
             <div className="card" style={{ padding: 0 }}>
               <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#475569' }}>{results.length} Candidates Found</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>{results.length} Candidates Found</span>
                 <span style={{ fontSize: 12, color: '#64748b' }}>Ranked by Semantic AI Relevance</span>
               </div>
               <div className="table-responsive">
@@ -115,7 +115,7 @@ export default function Sourcing() {
                     {results.map((c) => (
                       <tr key={c.id}>
                         <td>
-                          <div style={{ fontWeight: 700, color: '#1e293b' }}>{c.name}</div>
+                          <div style={{ fontWeight: 600, color: '#1e293b' }}>{c.name}</div>
                           <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{c.email}</div>
                           <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {c.skills?.slice(0, 3).map(s => (
@@ -126,7 +126,7 @@ export default function Sourcing() {
                         </td>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#ede9fe', color: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>
+                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#ede9fe', color: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 12 }}>
                               {Math.round(c.semantic_similarity * 100)}%
                             </div>
                             <span style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>Semantic Fit</span>

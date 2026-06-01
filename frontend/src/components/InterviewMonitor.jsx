@@ -9,6 +9,9 @@ export default function InterviewMonitor({ candidateId, onStop }) {
     looking_away_count: 0,
     no_face_count: 0,
     multiple_faces_count: 0,
+    smiling_count: 0,
+    talking_count: 0,
+    anxious_count: 0
   });
 
   const [status, setStatus] = useState('Initializing monitoring...');
@@ -18,6 +21,7 @@ export default function InterviewMonitor({ candidateId, onStop }) {
   useEffect(() => {
     let stream = null;
     let statInterval = null;
+    let audioInterval = null;
     let audioContext = null;
     let analyser = null;
     let lastInference = 0;
@@ -51,10 +55,10 @@ export default function InterviewMonitor({ candidateId, onStop }) {
         window.addEventListener('copy', handleCopy);
         window.addEventListener('paste', handlePaste);
 
-        // --- Audio Recording (Chunks every 10s) ---
+        // --- Audio Recording (Chunks every 10s with valid WebM headers) ---
         mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
         mediaRecorderRef.current.ondataavailable = async (e) => {
-          if (e.data.size > 0) {
+          if (e.data && e.data.size > 0) {
             const formData = new FormData();
             formData.append('audio', e.data, 'chunk.webm');
             formData.append('candidate_id', candidateId);
@@ -67,7 +71,13 @@ export default function InterviewMonitor({ candidateId, onStop }) {
             }
           }
         };
-        mediaRecorderRef.current.start(10000);
+        mediaRecorderRef.current.start();
+        audioInterval = setInterval(() => {
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
+            mediaRecorderRef.current.start();
+          }
+        }, 10000);
 
         // --- Audio Analysis (Silence Detection) ---
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -176,6 +186,46 @@ export default function InterviewMonitor({ candidateId, onStop }) {
               statsRef.current.posture_shift = (statsRef.current.posture_shift || 0) + 1;
           }
           statsRef.current.lastY = currentY;
+
+          // 4. Expression & Emotion detection (smiling, talking, eyebrows)
+          const leftEyeInnerPt = landmarks[133];
+          const rightEyeInnerPt = landmarks[362];
+          if (leftEyeInnerPt && rightEyeInnerPt) {
+            const eyeDist = Math.hypot(leftEyeInnerPt.x - rightEyeInnerPt.x, leftEyeInnerPt.y - rightEyeInnerPt.y);
+            
+            // Smile Detection
+            const mouthLeft = landmarks[61];
+            const mouthRight = landmarks[291];
+            if (mouthLeft && mouthRight && eyeDist > 0) {
+              const mouthWidth = Math.hypot(mouthLeft.x - mouthRight.x, mouthLeft.y - mouthRight.y);
+              const smileRatio = mouthWidth / eyeDist;
+              if (smileRatio > 0.82) {
+                statsRef.current.smiling_count = (statsRef.current.smiling_count || 0) + 1;
+              }
+            }
+
+            // Talking (Mouth Open) Detection
+            const lipTop = landmarks[13];
+            const lipBottom = landmarks[14];
+            if (lipTop && lipBottom && eyeDist > 0) {
+              const lipDist = Math.hypot(lipTop.x - lipBottom.x, lipTop.y - lipBottom.y);
+              const mouthOpenRatio = lipDist / eyeDist;
+              if (mouthOpenRatio > 0.12) {
+                statsRef.current.talking_count = (statsRef.current.talking_count || 0) + 1;
+              }
+            }
+
+            // Eyebrow Raised (Expressiveness / Surprise / Focus)
+            const eyebrowLeft = landmarks[70];
+            const eyeLeftUpper = landmarks[159];
+            if (eyebrowLeft && eyeLeftUpper && eyeDist > 0) {
+              const eyebrowDist = Math.hypot(eyebrowLeft.x - eyeLeftUpper.x, eyebrowLeft.y - eyeLeftUpper.y);
+              const eyebrowRatio = eyebrowDist / eyeDist;
+              if (eyebrowRatio > 0.28) {
+                statsRef.current.anxious_count = (statsRef.current.anxious_count || 0) + 1;
+              }
+            }
+          }
         });
 
         camera = new window.Camera(videoRef.current, {
@@ -206,14 +256,18 @@ export default function InterviewMonitor({ candidateId, onStop }) {
             copy_paste_count: statsRef.current.copy_paste_count || 0,
             posture_shift: statsRef.current.posture_shift || 0,
             presence: statsRef.current.presence ?? true,
-            suspicious_events: statsRef.current.suspicious_events || []
+            suspicious_events: statsRef.current.suspicious_events || [],
+            smiling_count: statsRef.current.smiling_count || 0,
+            talking_count: statsRef.current.talking_count || 0,
+            anxious_count: statsRef.current.anxious_count || 0
           }).catch(console.error);
 
           // Reset stats for next 5s window
           statsRef.current = { 
             ...statsRef.current,
             looking_away_count: 0, no_face_count: 0, multiple_faces_count: 0,
-            tab_switches: 0, copy_paste_count: 0, posture_shift: 0, suspicious_events: []
+            tab_switches: 0, copy_paste_count: 0, posture_shift: 0, suspicious_events: [],
+            smiling_count: 0, talking_count: 0, anxious_count: 0
           };
         }, 5000);
 
@@ -227,6 +281,7 @@ export default function InterviewMonitor({ candidateId, onStop }) {
 
     return () => {
       clearInterval(statInterval);
+      clearInterval(audioInterval);
       if (camera) camera.stop();
       if (faceMesh) faceMesh.close();
       if (audioContext) audioContext.close();
@@ -248,12 +303,12 @@ export default function InterviewMonitor({ candidateId, onStop }) {
           autoPlay playsInline muted 
         />
         <div style={{ position: 'absolute', bottom: 6, left: 6, right: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ background: 'rgba(15, 23, 42, 0.7)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, backdropFilter: 'blur(4px)', textAlign: 'center' }}>
+          <div style={{ background: 'rgba(15, 23, 42, 0.7)', color: '#fff', fontSize: 9, fontWeight: 600, padding: '2px 6px', borderRadius: 4, backdropFilter: 'blur(4px)', textAlign: 'center' }}>
             {currentFocus.toUpperCase()}
           </div>
           {riskAlert && (
-             <div style={{ background: 'rgba(239, 68, 68, 0.9)', color: '#fff', fontSize: 8, fontWeight: 900, padding: '2px 4px', borderRadius: 4, textAlign: 'center' }}>
-               ⚠️ RISK ALERT
+             <div style={{ background: 'rgba(239, 68, 68, 0.9)', color: '#fff', fontSize: 8, fontWeight: 600, padding: '2px 4px', borderRadius: 4, textAlign: 'center' }}>
+               RISK ALERT
              </div>
           )}
         </div>
@@ -261,7 +316,7 @@ export default function InterviewMonitor({ candidateId, onStop }) {
       <div style={{ flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: status.includes('Active') ? '#10b981' : '#ef4444', animation: status.includes('Active') ? 'pulse 2s infinite' : 'none' }} />
-          <div style={{ fontWeight: 800, fontSize: 13, color: '#1e293b', letterSpacing: '0.3px' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#1e293b', letterSpacing: '0.3px' }}>
             {status}
           </div>
         </div>

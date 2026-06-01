@@ -64,7 +64,7 @@ export default function InterviewPrepCard({ candidateId, jobId, jobTitle }) {
               Suggested Questions ({questions.length})
             </span>
             <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: generatedBy === 'cohere' ? '#ede9fe' : '#f3f4f6', color: generatedBy === 'cohere' ? '#7c3aed' : '#6b7280', fontWeight: 700 }}>
-              {generatedBy === 'cohere' ? '✨ AI GENERATED' : '📋 TEMPLATE BASED'}
+              {generatedBy === 'cohere' ? 'AI GENERATED' : 'TEMPLATE BASED'}
             </span>
           </div>
           

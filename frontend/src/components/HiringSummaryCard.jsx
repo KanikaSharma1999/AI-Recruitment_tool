@@ -1,8 +1,8 @@
 const REC_CONFIG = {
-  'Strong Hire': { bg: '#d1fae5', border: '#6ee7b7', text: '#065f46', icon: '✅', accent: '#059669' },
-  'Hire':        { bg: '#dbeafe', border: '#93c5fd', text: '#1e40af', icon: '👍', accent: '#2563eb' },
-  'Hold':        { bg: '#fef3c7', border: '#fcd34d', text: '#92400e', icon: '⏸', accent: '#d97706' },
-  'Reject':      { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', icon: '✗',  accent: '#dc2626' },
+  'Strong Hire': { bg: '#d1fae5', border: '#6ee7b7', text: '#065f46', icon: '', accent: '#059669' },
+  'Hire':        { bg: '#dbeafe', border: '#93c5fd', text: '#1e40af', icon: '', accent: '#2563eb' },
+  'Hold':        { bg: '#fef3c7', border: '#fcd34d', text: '#92400e', icon: '', accent: '#d97706' },
+  'Reject':      { bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', icon: '',  accent: '#dc2626' },
 };
 
 const CONF_CONFIG = {
@@ -16,7 +16,7 @@ export default function HiringSummaryCard({ candidate }) {
   if (!summary) {
     return (
       <div className="card" style={{ textAlign: 'center', padding: '28px 24px', color: 'var(--text-muted)' }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>🤖</div>
+        <div style={{ fontSize: 28, marginBottom: 8, color: 'var(--text-muted)' }}></div>
         <div style={{ fontSize: 13, fontWeight: 600 }}>AI summary not yet generated</div>
         <div style={{ fontSize: 12, marginTop: 4 }}>Run ranking to generate hiring intelligence</div>
       </div>
@@ -36,7 +36,7 @@ export default function HiringSummaryCard({ candidate }) {
         style={{ background: cfg.bg, borderBottom: `1px solid ${cfg.border}` }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>{cfg.icon}</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: cfg.text }}>{cfg.icon}</span>
           <div>
             <div style={{ fontSize: 13, fontWeight: 800, color: cfg.text }}>{rec}</div>
             <div style={{ fontSize: 11, color: cfg.accent, fontWeight: 600 }}>AI Hiring Recommendation</div>
@@ -82,7 +82,7 @@ export default function HiringSummaryCard({ candidate }) {
             {/* Weaknesses */}
             <div>
               <div className="summary-col-title" style={{ color: '#dc2626' }}>
-                ⚠ Concerns
+                Concerns
               </div>
               {(summary.weaknesses || []).map((w, i) => (
                 <div key={i} className="summary-point">

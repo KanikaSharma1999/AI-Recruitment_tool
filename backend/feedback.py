@@ -13,8 +13,12 @@ def _get_client():
     global _client
     if _client is None:
         api_key = os.getenv("COHERE_API_KEY")
-        if api_key:
-            _client = cohere.Client(api_key)
+        if api_key and "your_cohere_key" not in api_key:
+            try:
+                _client = cohere.Client(api_key, timeout=10)
+            except Exception as e:
+                logger.error(f"[Feedback] Failed to initialize Cohere client: {e}")
+                _client = None
     return _client
 
 def get_resume_feedback(resume_text: str, job_description: str) -> dict:
@@ -65,11 +69,11 @@ def get_resume_feedback(resume_text: str, job_description: str) -> dict:
 
 def _rule_based_feedback(resume_text: str, job_description: str) -> dict:
     from resume_parser import extract_skills, extract_experience_years
-    from matching import compute_skill_score, extract_required_experience
+    from matching import compute_skill_scores, extract_required_experience
 
     job_skills = extract_skills(job_description)
     candidate_skills = extract_skills(resume_text)
-    skill_score, matched, semantic, partial, missing = compute_skill_score(job_skills, candidate_skills)
+    skill_score, matched, semantic, partial, missing = compute_skill_scores(job_skills, candidate_skills)
     
     candidate_exp = extract_experience_years(resume_text)
     required_exp = extract_required_experience(job_description)

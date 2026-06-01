@@ -132,20 +132,68 @@ def generate_interview_report(candidate: dict, job: dict) -> bytes:
                             leftMargin=1.5*cm, rightMargin=1.5*cm,
                             topMargin=1.5*cm, bottomMargin=1.5*cm)
     styles = getSampleStyleSheet()
+    
+    # Custom styles to support leading when changing fontSize
+    title_style = ParagraphStyle(
+        "RepTitle", parent=styles["Heading1"], fontSize=20, leading=24,
+        textColor=colors.HexColor("#0f172a"), spaceAfter=4
+    )
+    subtitle_style = ParagraphStyle(
+        "RepSub", parent=styles["Normal"], fontSize=9, leading=13,
+        textColor=colors.HexColor("#64748b"), spaceAfter=15
+    )
+    heading_style = ParagraphStyle(
+        "RepHeading", parent=styles["Heading2"], fontSize=13, leading=17,
+        textColor=colors.HexColor("#1e293b"), spaceBefore=12, spaceAfter=6,
+        keepWithNext=True
+    )
+    subheading_style = ParagraphStyle(
+        "RepSubHeading", parent=styles["Heading3"], fontSize=11, leading=15,
+        textColor=colors.HexColor("#475569"), spaceBefore=10, spaceAfter=4,
+        keepWithNext=True
+    )
+    body_style = ParagraphStyle(
+        "RepBody", parent=styles["Normal"], fontSize=9.5, leading=13.5,
+        textColor=colors.HexColor("#334155")
+    )
+    bold_body = ParagraphStyle(
+        "RepBoldBody", parent=body_style, fontName="Helvetica-Bold"
+    )
+    italic_body = ParagraphStyle(
+        "RepItalicBody", parent=body_style, fontName="Helvetica-Oblique"
+    )
+    table_hdr_style = ParagraphStyle(
+        "RepTableHdr", parent=styles["Normal"], fontSize=9, leading=12,
+        textColor=colors.white, fontName="Helvetica-Bold"
+    )
+
     elements = []
     
+    def safe_float(v, default=0.0):
+        if v is None:
+            return default
+        try:
+            return float(v)
+        except:
+            return default
+            
     analysis = candidate.get("ai_analysis", {})
     metrics = analysis.get("metrics", {})
-
-    # 1. Header
-    header_style = ParagraphStyle("H1", parent=styles["Heading1"], fontSize=22, spaceAfter=4, textColor=colors.HexColor("#1e293b"))
-    elements.append(Paragraph("Interview Intelligence Report", header_style))
+    comm_analysis = analysis.get("communication_analysis", {})
+    beh_analysis = analysis.get("behavioral_analysis", {})
+    tech_eval = analysis.get("technical_evaluation", {})
+    meta = analysis.get("metadata", {})
+    event_log = analysis.get("event_log", [])
     
-    meta_style = ParagraphStyle("Meta", parent=styles["Normal"], fontSize=10, textColor=colors.HexColor("#64748b"), spaceAfter=20)
-    elements.append(Paragraph(f"Candidate: {candidate['name']} | Role: {job.get('title', 'N/A')} | Date: {datetime.utcnow().strftime('%Y-%m-%d')}", meta_style))
-
-    # 2. Executive Summary (Verdict)
-    elements.append(Paragraph("Executive Verdict", styles["Heading2"]))
+    # 1. Header
+    elements.append(Paragraph("Interview Intelligence Report", title_style))
+    elements.append(Paragraph(
+        f"Candidate: {candidate.get('name', 'N/A')} | Target Role: {job.get('title', 'N/A')} | Generated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+        subtitle_style
+    ))
+    
+    # 2. Executive Summary
+    elements.append(Paragraph("Executive Verdict", heading_style))
     
     verdict_color = {
         "Strong Hire": "#10b981",
@@ -153,82 +201,186 @@ def generate_interview_report(candidate: dict, job: dict) -> bytes:
         "Hold": "#f59e0b",
         "Reject": "#ef4444"
     }.get(analysis.get("recommendation"), "#64748b")
-
-    verdict_data = [[
-        Paragraph(f"<font color='{verdict_color}' size='14'><b>{analysis.get('recommendation', 'N/A').upper()}</b></font><br/>{analysis.get('verdict', '')}", styles["Normal"]),
-        Paragraph(f"<b>AI Confidence:</b> {analysis.get('confidence', 'N/A')}<br/><b>Risk Status:</b> {analysis.get('cheating_risk', 'N/A')}", styles["Normal"])
-    ]]
     
-    v_table = Table(verdict_data, colWidths=[10*cm, 7*cm])
+    rec_str = analysis.get("recommendation", "HOLD").upper()
+    verdict_text = f"<b>Recommendation:</b> <font color='{verdict_color}'><b>{rec_str}</b></font><br/><b>Verdict Summary:</b> {analysis.get('verdict', 'N/A')}"
+    
+    meta_text = (
+        f"<b>AI Confidence:</b> {analysis.get('analysis_confidence', 'High')}<br/>"
+        f"<b>Integrity Risk Status:</b> {analysis.get('cheating_risk', 'Low')}"
+    )
+    
+    verdict_data = [
+        [Paragraph(verdict_text, body_style), Paragraph(meta_text, body_style)]
+    ]
+    
+    v_table = Table(verdict_data, colWidths=[10.5*cm, 6.5*cm])
     v_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#f8fafc")),
-        ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#e2e8f0")),
+        ('BOX', (0,0), (-1,-1), 1.5, colors.HexColor("#cbd5e1")),
         ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
         ('TOPPADDING', (0,0), (-1,-1), 10),
         ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
     ]))
     elements.append(v_table)
-    elements.append(Spacer(1, 0.5*cm))
-
-    # 3. Behavioral Notes
-    elements.append(Paragraph("Recruiter Observations", styles["Heading3"]))
-    elements.append(Paragraph(analysis.get("reasoning", "No detailed analysis available."), styles["Normal"]))
-    elements.append(Spacer(1, 0.8*cm))
-
-    # 4. Behavioral Metrics Table
-    elements.append(Paragraph("Behavioral & Communication Metrics", styles["Heading3"]))
-    m_data = [
-        ["Metric", "Value", "Status"],
-        ["Visual Engagement", f"{metrics.get('attention_score', 0):.1f}%", analysis.get("attention", "N/A")],
-        ["Communication Clarity", f"{metrics.get('comm_score', 0):.1f}%", analysis.get("communication", "N/A")],
-        ["Speaking Ratio", f"{metrics.get('speaking_ratio', 0):.1f}%", "Optimal" if 30 <= metrics.get('speaking_ratio', 0) <= 60 else "Variable"],
-        ["Integrity Index", f"{metrics.get('risk_score', 0):.1f}", analysis.get("cheating_risk", "N/A")]
-    ]
-    m_table = Table(m_data, colWidths=[6*cm, 4*cm, 5*cm])
-    m_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e293b")),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-    ]))
-    elements.append(m_table)
-    elements.append(Spacer(1, 0.8*cm))
-
-    # 5. Behavioral Event Log
-    elements.append(Paragraph("Behavioral Event Log (Evidence Log)", styles["Heading3"]))
-    log = analysis.get("event_log", [])
-    if not log:
-        elements.append(Paragraph("No significant behavioral events recorded.", styles["Italic"]))
+    elements.append(Spacer(1, 0.4*cm))
+    
+    # Reasoning
+    elements.append(Paragraph("<b>Recruiter Reasoning & Analysis:</b>", subheading_style))
+    elements.append(Paragraph(f"\"{analysis.get('reasoning', 'No detailed reasoning provided.')}\"", italic_body))
+    elements.append(Spacer(1, 0.4*cm))
+    
+    # Format join/completion time for report
+    join_time_str = meta.get("join_time", "N/A")
+    if join_time_str != "N/A" and isinstance(join_time_str, str):
+        t_part = join_time_str.replace("Z", "").split(".")[0]
+        join_time_display = t_part.replace("T", " ") + " UTC"
     else:
-        l_data = [["Category", "Severity", "Event Observation"]]
-        for e in log[:15]: # Limit to top 15 for PDF
-            l_data.append([
-                e.get("category", "N/A"),
-                e.get("severity", "N/A"),
-                e.get("message", "")
-            ])
-        
-        l_table = Table(l_data, colWidths=[4*cm, 3*cm, 10*cm])
-        l_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f1f5f9")),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
-            ('FONTSIZE', (0,1), (-1,-1), 8),
-        ]))
-        # Color severities
-        for idx, e in enumerate(log[:15], 1):
-            sev = e.get("severity", "")
-            color = colors.black
-            if sev == "Critical": color = colors.red
-            elif sev == "High": color = colors.orange
-            l_table.setStyle(TableStyle([('TEXTCOLOR', (1, idx), (1, idx), color)]))
-            
-        elements.append(l_table)
+        join_time_display = "N/A"
 
-    # 6. Disclaimer
-    elements.append(Spacer(1, 1.5*cm))
+    comp_time_str = meta.get("completion_time", "N/A")
+    if comp_time_str != "N/A" and isinstance(comp_time_str, str):
+        t_part = comp_time_str.replace("Z", "").split(".")[0]
+        comp_time_display = t_part.replace("T", " ") + " UTC"
+    else:
+        comp_time_display = "N/A"
+
+    # 3. Session Metadata Table
+    elements.append(Paragraph("Session Information", heading_style))
+    meta_data = [
+        [
+            Paragraph("Total Duration", bold_body),
+            Paragraph(meta.get("total_duration", "N/A"), body_style),
+            Paragraph("Attendance", bold_body),
+            Paragraph(meta.get("attendance", "Present"), body_style),
+        ],
+        [
+            Paragraph("Join Time", bold_body),
+            Paragraph(join_time_display, body_style),
+            Paragraph("Completion Time", bold_body),
+            Paragraph(comp_time_display, body_style),
+        ],
+        [
+            Paragraph("Interruptions Count", bold_body),
+            Paragraph(f"{meta.get('interruptions', 0)} events", body_style),
+            Paragraph("Proctoring Risk Score", bold_body),
+            Paragraph(f"{safe_float(metrics.get('risk_score')): .1f}%", body_style),
+        ]
+    ]
+    meta_table = Table(meta_data, colWidths=[4.25*cm, 4.25*cm, 4.25*cm, 4.25*cm])
+    meta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.white),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#f1f5f9")),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    elements.append(meta_table)
+    elements.append(Spacer(1, 0.4*cm))
+    
+    # 4. Detailed Behavioral & Communication Breakdown
+    elements.append(Paragraph("Communication & Behavioral Breakdown", heading_style))
+    analysis_data = [
+        [Paragraph("Behavioral & Gaze Metric", table_hdr_style), Paragraph("Score", table_hdr_style), Paragraph("Evaluation Details", table_hdr_style)],
+        [Paragraph("Communication Clarity", bold_body), Paragraph(f"{safe_float(comm_analysis.get('clarity_score', metrics.get('comm_score'))):.1f}%", body_style), Paragraph(f"Speech Pace: {comm_analysis.get('speech_pace', 'Normal')} | Hesitation: {comm_analysis.get('hesitation_detection', 'Low')}", body_style)],
+        [Paragraph("Confidence & Engagement", bold_body), Paragraph(f"{safe_float(comm_analysis.get('confidence_score', metrics.get('conf_score'))):.1f}%", body_style), Paragraph(f"Audience Engagement Index: {comm_analysis.get('engagement', 80)}%", body_style)],
+        [Paragraph("Eye Contact Consistency", bold_body), Paragraph(f"{safe_float(beh_analysis.get('eye_contact', metrics.get('eye_contact'))):.1f}%", body_style), Paragraph(f"Stress Indicator: {beh_analysis.get('stress_indicators', 'Low')} | Honesty Index: {beh_analysis.get('honesty_indicators', 'High')}", body_style)],
+        [Paragraph("Session Attentiveness", bold_body), Paragraph(f"{safe_float(beh_analysis.get('attentiveness', metrics.get('attention_score'))):.1f}%", body_style), Paragraph(f"Stability: {beh_analysis.get('emotional_stability', 80)}% | Distractions: {beh_analysis.get('distraction_detection', 'None')}", body_style)],
+        [Paragraph("Speaking Distribution", bold_body), Paragraph(f"{safe_float(metrics.get('candidate_speaking_ratio', metrics.get('speaking_ratio', 50.0))):.1f}%", body_style), Paragraph(f"Candidate: {safe_float(metrics.get('candidate_speaking_ratio', metrics.get('speaking_ratio', 50.0))):.1f}% | Interviewer: {safe_float(metrics.get('interviewer_speaking_ratio', 100.0 - safe_float(metrics.get('speaking_ratio', 50.0)))):.1f}%", body_style)],
+        [Paragraph("Filler Words Count", bold_body), Paragraph(f"{metrics.get('word_count', 0)} words", body_style), Paragraph(f"Um/Uh: {comm_analysis.get('filler_word_detection', {}).get('um_uh_count', 0)} | Like: {comm_analysis.get('filler_word_detection', {}).get('like_count', 0)} | Other: {comm_analysis.get('filler_word_detection', {}).get('other_fillers_count', 0)}", body_style)],
+    ]
+    analysis_table = Table(analysis_data, colWidths=[5.5*cm, 2.5*cm, 9.0*cm])
+    analysis_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1e293b")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    elements.append(analysis_table)
+    elements.append(Spacer(1, 0.4*cm))
+    
+    # 5. Technical Evaluation Fit
+    elements.append(Paragraph("Technical Evaluation & Fit", heading_style))
+    tech_data = [
+        [
+            Paragraph("Technical Understanding", bold_body),
+            Paragraph(f"{tech_eval.get('technical_understanding', 70)}%", body_style),
+            Paragraph("Depth of Answers", bold_body),
+            Paragraph(f"{tech_eval.get('depth_of_answers', 70)}%", body_style),
+        ],
+        [
+            Paragraph("Leadership Indicators", bold_body),
+            Paragraph(tech_eval.get("leadership_indicators", "Average"), body_style),
+            Paragraph("Problem Solving Quality", bold_body),
+            Paragraph(tech_eval.get("problem_solving_quality", "Good"), body_style),
+        ]
+    ]
+    tech_table = Table(tech_data, colWidths=[4.25*cm, 4.25*cm, 4.25*cm, 4.25*cm])
+    tech_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.white),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor("#f1f5f9")),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    elements.append(tech_table)
+    elements.append(Spacer(1, 0.4*cm))
+    
+    # 6. Detailed Proctoring & Event Log
+    if event_log:
+        elements.append(Paragraph("Behavioral Event Log", heading_style))
+        log_data = [[Paragraph("Category", table_hdr_style), Paragraph("Severity", table_hdr_style), Paragraph("Observation Message", table_hdr_style)]]
+        for e in event_log[:10]:
+            log_data.append([
+                Paragraph(e.get("category", "N/A"), body_style),
+                Paragraph(e.get("severity", "N/A"), body_style),
+                Paragraph(e.get("message", "N/A"), body_style)
+            ])
+        log_table = Table(log_data, colWidths=[3.5*cm, 2.5*cm, 11.0*cm])
+        log_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#334155")),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+        elements.append(log_table)
+        elements.append(Spacer(1, 0.4*cm))
+        
+    # 7. Transcript Section
+    transcript = candidate.get("transcript", [])
+    if transcript:
+        elements.append(Paragraph("Interview Conversation Transcript", heading_style))
+        trans_data = []
+        for idx, sentence in enumerate(transcript):
+            speaker = "Interviewer" if idx % 2 == 0 else "Candidate"
+            trans_data.append([
+                Paragraph(f"<b>{speaker}:</b>", body_style),
+                Paragraph(sentence, body_style)
+            ])
+        trans_table = Table(trans_data, colWidths=[2.5*cm, 14.5*cm])
+        trans_table.setStyle(TableStyle([
+            ('ROWBACKGROUNDS', (0,0), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 6),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ]))
+        elements.append(trans_table)
+
+    # Disclaimer
+    elements.append(Spacer(1, 1.0*cm))
     disc_style = ParagraphStyle("Disc", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#94a3b8"), italic=True)
     elements.append(Paragraph("This report is generated by AI based on behavioral monitoring. Final hiring decisions should be made by human recruiters in conjunction with technical assessment results.", disc_style))
 

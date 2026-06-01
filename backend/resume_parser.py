@@ -24,12 +24,20 @@ try:
 except ImportError:
     _PDF_OK = False
 
-# ── spaCy ─────────────────────────────────────────────────────────────────────
-try:
-    import spacy
-    nlp = spacy.load("en_core_web_sm")
-except Exception:
-    nlp = None
+# ── spaCy (Lazy Loaded) ───────────────────────────────────────────────────────
+_nlp = None
+def get_nlp():
+    global _nlp
+    if _nlp is None:
+        try:
+            import spacy
+            logger.info("[ResumeParser] Lazy-loading spaCy en_core_web_sm model...")
+            _nlp = spacy.load("en_core_web_sm")
+            logger.info("[ResumeParser] spaCy model loaded successfully.")
+        except Exception as e:
+            logger.warning(f"[ResumeParser] Could not load spaCy model: {e}")
+            _nlp = False
+    return _nlp if _nlp is not False else None
 
 # ── rapidfuzz ─────────────────────────────────────────────────────────────────
 try:
@@ -214,10 +222,14 @@ SKILL_SYNONYMS: dict[str, str] = {
     "gql": "graphql",
 
     # REST
+    "rest": "rest api",
     "restful": "rest api",
     "rest apis": "rest api",
     "restful api": "rest api",
     "api": "rest api",
+    "pytest": "unit testing",
+    "unittest": "unit testing",
+    "sql": "postgresql",
 
     # Data Viz
     "powerbi": "power bi",
@@ -342,6 +354,7 @@ def is_valid_name(candidate: str) -> bool:
 
 def extract_candidate_details(raw_text: str, filename: str) -> dict:
     """Multi-strategy name/email/phone extraction."""
+    nlp = get_nlp()
     email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', raw_text)
     email = email_match.group(0) if email_match else "Not Found"
 
@@ -623,7 +636,7 @@ def extract_experience_years(text: str) -> float:
     if api_key and api_key not in ("your_cohere_key", ""):
         try:
             import cohere
-            client = cohere.Client(api_key)
+            client = cohere.Client(api_key, timeout=10)
             prompt = (
                 "You are a resume parser. Read the following resume text carefully.\n"
                 "Your ONLY task: extract the TOTAL years of professional work experience.\n"
@@ -751,6 +764,7 @@ def extract_projects(text: str) -> List[str]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_location(text: str) -> str:
+    nlp = get_nlp()
     locations = [
         "Bangalore", "Bengaluru", "Mumbai", "Delhi", "Pune", "Hyderabad",
         "Chennai", "Kolkata", "Ahmedabad", "Noida", "Gurgaon", "Gurugram",

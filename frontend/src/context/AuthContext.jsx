@@ -7,7 +7,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('ats_user');
     const parsed = saved ? JSON.parse(saved) : null;
-    if (parsed && parsed.email !== 'sandhyagowda506@gmail.com') {
+    if (parsed && (!parsed.email || parsed.email.toLowerCase() !== 'sandhyagowda506@gmail.com')) {
       localStorage.removeItem('ats_token');
       localStorage.removeItem('ats_user');
       return null;
@@ -17,13 +17,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user && user.email !== 'sandhyagowda506@gmail.com') {
+    if (user && (!user.email || user.email.toLowerCase() !== 'sandhyagowda506@gmail.com')) {
       logout();
     }
   }, [user]);
 
   const login = async (email, password) => {
-    if (email !== 'sandhyagowda506@gmail.com') {
+    if (email.toLowerCase() !== 'sandhyagowda506@gmail.com') {
       throw new Error('Access restricted to authorized recruiter.');
     }
     const params = new URLSearchParams();

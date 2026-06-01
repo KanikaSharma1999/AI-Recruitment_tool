@@ -1,298 +1,710 @@
 import os
+import json
 import re
 import numpy as np
 from bson import ObjectId
-from datetime import datetime
-from database import candidates_col
+from datetime import datetime, timezone
+from database import candidates_col, jobs_col, interview_sessions_col
+from groq import AsyncGroq
 
 class MultimodalAnalyzer:
     """
     Enterprise-grade AI Interview Analysis Engine.
-    Prioritizes actual detected behavior over generative guesses.
+    Combines web-cam face tracking statistics and audio transcripts with Groq LLM inference.
     """
-
-    def __init__(self, face_stats, transcripts, resume_score):
-        self.face_stats = face_stats
-        self.transcripts = transcripts
+    def __init__(self, face_stats, transcripts, resume_score, job_title="Software Engineer", job_description="", total_duration_secs=None):
+        self.face_stats = face_stats or []
+        self.transcripts = transcripts or []
         self.resume_score = float(resume_score or 0.0)
-        self.total_seconds = len(face_stats) * 5 if face_stats else 0
         
-    def analyze(self):
-        # 1. Behavioral Analysis (Video/Gaze/Posture)
-        video_metrics = self._analyze_behavioral()
-        
-        # 2. Communication Analysis (Audio/Speech/Clarity)
-        speech_metrics = self._analyze_communication()
-        
-        # 3. Security & Proctoring (Cheating Detection)
-        security_metrics = self._analyze_proctoring()
-        
-        # 4. Data Quality & Analysis Confidence
-        quality_metrics = self._assess_data_quality(video_metrics, speech_metrics)
-        
-        # 5. Final Aggregation & Expert Recommendation
-        return self._aggregate_intelligence(video_metrics, speech_metrics, security_metrics, quality_metrics)
-
-    def _analyze_behavioral(self):
-        """Analyzes gaze, head pose, and presence."""
-        if not self.face_stats:
-            return {"eye_contact": 0, "stability": 0, "attention": 0, "level": "Insufficient Data", "timeline": []}
+        if total_duration_secs is not None and total_duration_secs > 0:
+            self.total_seconds = total_duration_secs
+        else:
+            self.total_seconds = len(face_stats) * 5 if face_stats else 300  # Default to 5 mins if no stats
             
+        self.job_title = job_title
+        self.job_description = job_description
+
+    def run_heuristics(self):
+        # 1. Behavioral
         timeline = []
         eye_contact_vals = []
         no_face_events = 0
+        multiple_faces = 0
+        tab_switches = 0
+        copy_paste = 0
+        posture_shifts = 0
+        smiling_instances = 0
+        talking_instances = 0
+        anxious_instances = 0
+        total_chunks = max(1, len(self.face_stats))
         
         for i, chunk in enumerate(self.face_stats):
             looking_away = chunk.get("looking_away_count", 0)
             no_face = chunk.get("no_face_count", 0)
-            if no_face > 5: no_face_events += 1
+            multiple_faces += chunk.get("multiple_faces_count", 0)
+            tab_switches += chunk.get("tab_switches", 0)
+            copy_paste += chunk.get("copy_paste_count", 0)
+            posture_shifts += chunk.get("posture_shift", 0)
+            smiling_instances += chunk.get("smiling_count", 0)
+            talking_instances += chunk.get("talking_count", 0)
+            anxious_instances += chunk.get("anxious_count", 0)
             
-            # Stricter focus calculation
+            if no_face > 5:
+                no_face_events += 1
+            
             focus = max(0, 100 - (looking_away * 10) - (no_face * 25))
-            
-            # Mark event if focus drops below 30
             event = None
             if focus < 30:
                 event = "Distracted" if no_face < 5 else "Left Frame"
-                
             timeline.append({"time": i * 5, "focus": focus, "event": event})
             eye_contact_vals.append(focus)
 
-        avg_eye_contact = np.mean(eye_contact_vals) if eye_contact_vals else 0
-        stability = 100 - (no_face_events * 10)
-        stability = max(0, min(100, stability))
-        
-        # Conservative Levels
-        if avg_eye_contact > 85: level = "High"
-        elif avg_eye_contact > 70: level = "Focused"
-        elif avg_eye_contact > 45: level = "Variable"
-        else: level = "Weak"
-        
-        return {
-            "eye_contact": round(avg_eye_contact, 1),
-            "stability": round(stability, 1),
-            "attention": round(avg_eye_contact * 0.8 + stability * 0.2, 1),
-            "level": level,
-            "timeline": timeline,
-            "no_face_count": no_face_events
-        }
+        avg_eye_contact = np.mean(eye_contact_vals) if eye_contact_vals else 75.0
+        stability = max(0, min(100, 100 - (no_face_events * 10)))
+        attention_score = avg_eye_contact * 0.8 + stability * 0.2
 
-    def _analyze_communication(self):
-        """Analyzes speech, silence, and confidence with stricter calibration."""
+        # 2. Communication
         full_text = " ".join(self.transcripts)
         words = full_text.split()
         word_count = len(words)
-        
-        # 1. Speaking Duration
-        speaking_secs = word_count / 2.0 # Conservative estimate (2 words/sec)
+        speaking_secs = word_count / 2.0  # Conservative estimate (2 words/sec)
         silence_secs = max(0, self.total_seconds - speaking_secs)
-        speaking_ratio = (speaking_secs / max(1, self.total_seconds)) * 100
         
-        # 2. Filler Detection
+        # Candidate speaking ratio
+        speaking_ratio = (speaking_secs / max(1, self.total_seconds)) * 100
+        speaking_ratio = min(95.0, max(5.0, speaking_ratio))  # Cap realistic speaking ratio
+        
+        # Interviewer speaking ratio (heuristically derived or estimated)
+        silence_ratio = (silence_secs / max(1, self.total_seconds)) * 100
+        interviewer_ratio = max(5.0, 100.0 - speaking_ratio - silence_ratio)
+        total_active = speaking_ratio + interviewer_ratio
+        if total_active > 100.0:
+            speaking_ratio = (speaking_ratio / total_active) * 100.0
+            interviewer_ratio = (interviewer_ratio / total_active) * 100.0
+
         fillers = ["um", "uh", "ah", "like", "basically", "actually", "sort of", "kind of"]
         filler_count = sum(1 for w in words if w.lower() in fillers)
         filler_density = (filler_count / max(1, word_count)) * 100
         
-        # 3. Stricter Communication Score
-        # Start low, earn points.
-        comm_score = 20 # Base for presence
-        if word_count > 50:
-            # Earn up to 50 pts for ratio (ideal 30-60%)
-            if 30 <= speaking_ratio <= 65: comm_score += 50
-            else: comm_score += min(30, speaking_ratio)
-            
-            # Earn up to 30 pts for low fillers
-            filler_penalty = filler_density * 4
-            comm_score += max(0, 30 - filler_penalty)
-        
-        # Final Leveling
-        if word_count < 30: level = "Very Limited"
-        elif comm_score > 85: level = "Professional"
-        elif comm_score > 70: level = "Articulate"
-        elif comm_score > 50: level = "Conversational"
-        else: level = "Needs Improvement"
-        
-        if speaking_ratio < 15:
-            level = "Mostly Silent"
-            comm_score = min(20, comm_score)
+        comm_score = 50.0  # Base
+        if word_count > 10:
+            if 30 <= speaking_ratio <= 65:
+                comm_score += 30
+            else:
+                comm_score += max(0, 20 - abs(45 - speaking_ratio) * 0.5)
+            comm_score += max(0, 20 - filler_density * 3)
+        comm_score = min(100.0, max(10.0, comm_score))
 
-        return {
-            "score": round(comm_score, 1),
-            "level": level,
-            "speaking_ratio": round(speaking_ratio, 1),
-            "filler_count": filler_count,
-            "word_count": word_count,
-            "silence_secs": round(silence_secs, 1)
-        }
+        # 3. Proctoring Risk
+        risk_score = (multiple_faces * 60) + (tab_switches * 35) + (copy_paste * 20)
+        risk_score = min(100.0, risk_score)
+        
+        cheating_risk = "Low"
+        if risk_score > 70: cheating_risk = "Critical"
+        elif risk_score > 40: cheating_risk = "High Risk"
+        elif risk_score > 15: cheating_risk = "Suspicious"
 
-    def _analyze_proctoring(self):
-        """High-sensitivity security and proctoring detection with categorization."""
-        if not self.face_stats:
-            return {"risk_score": 0, "level": "Unknown", "evidence": []}
-            
-        multiple_faces = sum(s.get("multiple_faces_count", 0) for s in self.face_stats)
-        tab_switches = sum(s.get("tab_switches", 0) for s in self.face_stats)
-        copy_paste = sum(s.get("copy_paste_count", 0) for s in self.face_stats)
+        # 4. Expressions & Dynamic Multimodal Scoring
+        smile_ratio = min(100.0, (smiling_instances / total_chunks) * 100)
+        anxious_ratio = min(100.0, (anxious_instances / total_chunks) * 100)
+        talking_ratio = min(100.0, (talking_instances / total_chunks) * 100)
         
-        # Sharp risk escalation
-        risk = (multiple_faces * 60) + (tab_switches * 35) + (copy_paste * 20)
-        risk = min(100, risk)
+        # Engagement: Attention, positive smiles, and active verbal speaking ratio
+        engagement_score = attention_score * 0.6 + min(100.0, smile_ratio * 3.0) * 0.2 + min(100.0, speaking_ratio * 1.5) * 0.2
+        engagement_score = min(100.0, max(20.0, engagement_score))
         
-        evidence = []
+        # Speech Confidence: Eye contact stability, fluent speech pattern, and responsive talking ratio
+        confidence_score = avg_eye_contact * 0.5 + max(0, 100 - filler_density * 4) * 0.3 + min(100.0, speaking_ratio * 1.2) * 0.2
+        confidence_score = min(100.0, max(20.0, confidence_score))
+        
+        # Professionalism: Stability in frame, low proctoring events, and low anxiety ratio
+        professionalism_score = stability * 0.6 + max(0, 100 - risk_score) * 0.3 + max(0, 100 - anxious_ratio * 4) * 0.1
+        professionalism_score = min(100.0, max(20.0, professionalism_score))
+
+        # Event log extraction from actual chunks
         event_log = []
+        seen_events = set()
         
-        # Categorized Events
         if multiple_faces > 0:
-            msg = f"Multiple individuals detected in frame ({multiple_faces} instances)."
-            evidence.append(msg)
-            event_log.append({"category": "Integrity", "severity": "Critical", "message": msg, "time": "Multiple"})
-            
+            event_log.append({"category": "Integrity", "severity": "Critical", "message": f"Multiple individuals detected in frame ({multiple_faces} instances).", "time": "Multiple"})
         if tab_switches > 0:
-            msg = f"Browser focus lost/Tab switched ({tab_switches} times)."
-            evidence.append(msg)
-            event_log.append({"category": "Attention", "severity": "Moderate", "message": msg, "time": "Variable"})
-            
+            event_log.append({"category": "Attention", "severity": "Moderate", "message": f"Browser tab switched ({tab_switches} times).", "time": "Variable"})
         if copy_paste > 0:
-            msg = "Suspicious clipboard (copy/paste) usage detected."
-            evidence.append(msg)
-            event_log.append({"category": "Integrity", "severity": "High", "message": msg, "time": "Instant"})
+            event_log.append({"category": "Integrity", "severity": "High", "message": "Suspicious copy/paste clipboard usage detected.", "time": "Instant"})
 
-        # Add generic events from raw stats
-        for stat in self.face_stats:
-            for e in stat.get("suspicious_events", []):
-                cat = "Attention" if "face" in e.lower() or "look" in e.lower() else "Security"
-                event_log.append({
-                    "category": cat,
-                    "severity": "Low" if "look" in e.lower() else "Moderate",
-                    "message": e,
-                    "time": "T-Event"
-                })
+        for chunk in self.face_stats:
+            chunk_events = chunk.get("suspicious_events", [])
+            if not isinstance(chunk_events, list):
+                continue
+            for e in chunk_events:
+                if not isinstance(e, dict):
+                    continue
+                etype = e.get("type")
+                etime = e.get("time", "Variable")
+                time_display = "Variable"
+                if etime and etime != "Variable":
+                    try:
+                        time_display = datetime.fromisoformat(etime.replace("Z", "+00:00")).strftime("%H:%M:%S")
+                    except:
+                        time_display = etime
+                
+                key = f"{etype}_{time_display}"
+                if key in seen_events:
+                    continue
+                seen_events.add(key)
+                
+                if etype == 'tab_switch':
+                    event_log.append({
+                        "category": "Attention",
+                        "severity": "Moderate",
+                        "message": "Candidate switched browser tabs / unfocused the interview panel.",
+                        "time": time_display
+                    })
+                elif etype == 'copy_action':
+                    event_log.append({
+                        "category": "Integrity",
+                        "severity": "High",
+                        "message": "Candidate copied text from the screen/clipboard.",
+                        "time": time_display
+                    })
+                elif etype == 'paste_action':
+                    event_log.append({
+                        "category": "Integrity",
+                        "severity": "High",
+                        "message": "Candidate pasted external text into the input field.",
+                        "time": time_display
+                    })
+                elif etype == 'multiple_faces':
+                    event_log.append({
+                        "category": "Integrity",
+                        "severity": "Critical",
+                        "message": e.get("detail", "Multiple individuals detected in webcam frame."),
+                        "time": time_display
+                    })
+                elif etype == 'looking_away_repeatedly':
+                    event_log.append({
+                        "category": "Attention",
+                        "severity": "Moderate",
+                        "message": "Candidate looked away from camera repeatedly.",
+                        "time": time_display
+                    })
+                elif etype == 'long_silence':
+                    event_log.append({
+                        "category": "Communication",
+                        "severity": "Moderate",
+                        "message": "Extended silence detected (no verbal response for 10+ seconds).",
+                        "time": time_display
+                    })
 
-        if risk > 80: level = "Critical"
-        elif risk > 50: level = "High Risk"
-        elif risk > 20: level = "Suspicious"
-        else: level = "Clean"
-        
         return {
-            "risk_score": round(risk, 1),
-            "level": level,
-            "evidence": evidence,
-            "event_log": event_log
+            "eye_contact": round(avg_eye_contact, 1),
+            "stability": round(stability, 1),
+            "attention_score": round(attention_score, 1),
+            "comm_score": round(comm_score, 1),
+            "speaking_ratio": round(speaking_ratio, 1),
+            "interviewer_ratio": round(interviewer_ratio, 1),
+            "silence_secs": round(silence_secs, 1),
+            "word_count": word_count,
+            "filler_count": filler_count,
+            "risk_score": round(risk_score, 1),
+            "cheating_risk": cheating_risk,
+            "timeline": timeline,
+            "event_log": event_log,
+            "interruptions": tab_switches + (1 if no_face_events > 0 else 0),
+            
+            # Detailed multimodal scores
+            "engagement_score": round(engagement_score, 1),
+            "confidence_score": round(confidence_score, 1),
+            "professionalism_score": round(professionalism_score, 1),
+            "smiling_ratio": round(smile_ratio, 1),
+            "anxious_ratio": round(anxious_ratio, 1),
+            "talking_ratio": round(talking_ratio, 1),
+            "posture_shifts": posture_shifts
         }
 
-    def _assess_data_quality(self, video, comms):
-        """Determines if the analysis is reliable."""
-        total_time = self.total_seconds
-        total_words = comms["word_count"]
-        
-        # Stricter production thresholds
-        if total_time < 90 or total_words < 40:
-            return {"confidence": "Low", "reason": "Insufficient interview duration or limited verbal data (minimum 90s required)"}
-        if video["eye_contact"] < 35:
-            return {"confidence": "Medium", "reason": "Weak visual signal (candidate frequently out of frame or obscured)"}
-        return {"confidence": "High", "reason": "Sufficient multimodal data collected"}
+    async def synthesize_analysis(self, heuristics, candidate_name):
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            return self.get_fallback_synthesis(heuristics, candidate_name)
 
-    def _aggregate_intelligence(self, video, comms, security, quality):
-        """Final conservative synthesis with extreme calibration."""
-        # 1. Base Confidence (harder to earn)
-        base_score = (video["eye_contact"] * 0.35) + (comms["score"] * 0.45)
-        if quality["confidence"] == "High": base_score += 20
-        elif quality["confidence"] == "Medium": base_score += 10
-        
-        # 2. Penalty Application (Doubled for enterprise)
-        penalty = security["risk_score"] * 1.2
-        final_confidence = max(0, base_score - penalty)
-        
-        # 3. Decision Logic (Elite thresholds)
-        perf_index = (video["attention"] * 0.4 + comms["score"] * 0.6)
-        hiring_index = (self.resume_score * 0.3) + (perf_index * 0.7)
-        
-        if security["level"] in ["Critical", "High Risk"]:
-            recommendation = "Reject"
-            verdict = "Security/Integrity Failure"
-        elif hiring_index > 92 and comms["level"] == "Professional" and video["level"] == "High" and security["level"] == "Clean":
-            recommendation = "Strong Hire"
-            verdict = "Exceptional Fit & Peerless Integrity"
-        elif hiring_index > 72 and comms["score"] > 65:
-            recommendation = "Hire"
-            verdict = "Competent Professional Performance"
-        elif hiring_index > 50:
-            recommendation = "Hold"
-            verdict = "Marginal Behavioral/Technical Fit"
+        full_text = " ".join(self.transcripts)
+        if not full_text.strip():
+            full_text = "[No verbal transcript recorded during the interview]"
+
+        prompt = f"""
+You are an advanced Enterprise AI Interview Intelligence Engine.
+You need to generate a comprehensive, recruiter-ready interview analysis report based on the candidate's speech transcript and webcam eye-tracking heuristics.
+
+CANDIDATE DETAILS:
+- Candidate Name: {candidate_name}
+- Target Job: {self.job_title}
+- Job Description: {self.job_description[:600]}
+
+INTERVIEW HEURISTICS:
+- Average Gaze Eye Contact: {heuristics['eye_contact']}%
+- Visual Attention Score: {heuristics['attention_score']}%
+- Verbal Communication Score: {heuristics['comm_score']}%
+- Candidate Speaking Ratio: {heuristics['speaking_ratio']}%
+- Estimated Interviewer Speaking Ratio: {heuristics['interviewer_ratio']}%
+- Word Count: {heuristics['word_count']} words
+- Filler Words Count: {heuristics['filler_count']}
+- Integrity Risk Score: {heuristics['risk_score']}% (Status: {heuristics['cheating_risk']})
+- Expression Smiling Ratio: {heuristics['smiling_ratio']}%
+- Anxious Expression Ratio: {heuristics['anxious_ratio']}%
+- Mouth Movement Talking Ratio: {heuristics['talking_ratio']}%
+- Posture Shifts: {heuristics['posture_shifts']} instances
+
+TRANSCRIPT SAMPLE:
+"{full_text[:4000]}"
+
+Generate a detailed analysis in JSON format. The response must be STRICTLY valid JSON, with no explanation or wrapping in markdown backticks. All scores (clarity_score, confidence_score, technical_understanding, problem_solving_quality, etc.) must be strictly grounded in direct quotes and timeline evidence.
+
+Expected JSON schema:
+{{
+  "recommendation": "Strong Hire" | "Hire" | "Hold" | "Reject",
+  "verdict": "A brief summary sentence of the hiring decision.",
+  "reasoning": "Concise recruiter-ready explanation. Example: 'Candidate demonstrated strong confidence and technical depth with excellent communication consistency throughout the interview.'",
+  "communication_analysis": {{
+    "clarity_score": number (0-100),
+    "confidence_score": number (0-100),
+    "professionalism": number (0-100),
+    "engagement": number (0-100),
+    "speech_pace": "Slow" | "Normal" | "Fast",
+    "hesitation_detection": "Low" | "Moderate" | "High",
+    "filler_word_detection": {{
+       "um_uh_count": number,
+       "like_count": number,
+       "other_fillers_count": number
+    }},
+    "sentiment_analysis": "Positive" | "Neutral" | "Negative",
+    "response_quality": "High" | "Medium" | "Low",
+    "evidence_quote": "Direct quote from the transcript illustrating communication style or clarity."
+  }},
+  "behavioral_analysis": {{
+    "eye_contact": number (0-100),
+    "attentiveness": number (0-100),
+    "emotional_stability": number (0-100),
+    "honesty_indicators": "High" | "Medium" | "Low",
+    "stress_indicators": "High" | "Medium" | "Low",
+    "distraction_detection": "None" | "Minor distraction" | "Highly distracted",
+    "engagement_score": number (0-100),
+    "emotion_timeline": [
+       {{"timestamp": string, "emotion": "Happy" | "Focused" | "Neutral" | "Anxious" | "Stressed"}}
+    ],
+    "suspicious_behavior_flags": [
+       {{"timestamp": string, "flag": string, "description": string}}
+    ],
+    "integrity_evidence": "Detailed description of webcam attention timeline, tab switching violations, and gaze stability."
+  }},
+  "interview_intelligence": {{
+    "interviewer_speaking_ratio": number (0-100),
+    "candidate_speaking_ratio": number (0-100),
+    "technical_depth_estimation": number (0-100),
+    "leadership_indicators": "Strong" | "Average" | "Weak",
+    "communication_indicators": "Excellent" | "Good" | "Average" | "Poor",
+    "professionalism_indicators": "High" | "Medium" | "Low"
+  }},
+  "technical_evaluation": {{
+    "technical_understanding": number (0-100),
+    "depth_of_answers": number (0-100),
+    "leadership_indicators": "Strong" | "Average" | "Weak",
+    "problem_solving_quality": "Exceptional" | "Good" | "Average" | "Basic",
+    "evidence_quote": "Direct candidate quote from the transcript explaining a technical concept, language feature, or system design aspect."
+  }}
+}}
+"""
+
+        try:
+            client = AsyncGroq(api_key=api_key)
+            response = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=1200,
+                response_format={"type": "json_object"}
+            )
+            raw = response.choices[0].message.content.strip()
+            res = json.loads(raw)
+            
+            fallback = self.get_fallback_synthesis(heuristics, candidate_name)
+            def deep_merge(d1, d2):
+                for k, v in d2.items():
+                    if k not in d1 or d1[k] is None:
+                        d1[k] = v
+                    elif isinstance(v, dict) and isinstance(d1.get(k), dict):
+                        deep_merge(d1[k], v)
+                return d1
+            
+            return deep_merge(res, fallback)
+        except Exception as e:
+            print(f"[AI Analysis] Groq LLM synthesis failed, falling back. Error: {e}")
+            return self.get_fallback_synthesis(heuristics, candidate_name)
+
+    def get_fallback_synthesis(self, heuristics, candidate_name):
+        score = (heuristics["attention_score"] + heuristics["comm_score"]) / 2
+        if heuristics["cheating_risk"] in ["Critical", "High Risk"]:
+            rec = "Reject"
+            verdict = "Security and proctoring policy violation."
+        elif score > 75:
+            rec = "Hire"
+            verdict = "Candidate metrics meet target benchmarks."
+        elif score > 50:
+            rec = "Hold"
+            verdict = "Candidate metrics within acceptable limits; secondary review recommended."
         else:
-            recommendation = "Reject"
-            verdict = "Below Target Performance Thresholds"
+            rec = "Reject"
+            verdict = "Candidate metrics fall below target benchmarks."
 
-        if quality["confidence"] == "Low":
-            verdict = f"Inconclusive: {quality['reason']}"
-            recommendation = "Hold"
+        summary = f"System Heuristics: Communication Clarity: {heuristics['comm_score']}%, Eye Contact: {heuristics['eye_contact']}%, Attention: {heuristics['attention_score']}%."
 
         return {
-            "communication": comms["level"],
-            "confidence": quality["confidence"],
-            "attention": video["level"],
-            "cheating_risk": security["level"],
-            "recommendation": recommendation,
+            "recommendation": rec,
             "verdict": verdict,
-            "reasoning": f"Analysis grounded in {quality['confidence'].lower()} quality behavioral data. {quality.get('reason', '')}",
-            "metrics": {
-                "comm_score": comms["score"],
-                "conf_score": round(final_confidence, 1),
-                "risk_score": security["risk_score"],
-                "attention_score": video["attention"],
-                "speaking_ratio": comms["speaking_ratio"],
-                "word_count": comms["word_count"]
+            "reasoning": summary,
+            "communication_analysis": {
+                "clarity_score": heuristics["comm_score"],
+                "confidence_score": heuristics["confidence_score"],
+                "professionalism": int(heuristics["professionalism_score"]),
+                "engagement": int(heuristics["engagement_score"]),
+                "speech_pace": "Normal",
+                "hesitation_detection": "Moderate",
+                "filler_word_detection": {
+                   "um_uh_count": heuristics["filler_count"],
+                   "like_count": 0,
+                   "other_fillers_count": 0
+                },
+                "sentiment_analysis": "Neutral",
+                "response_quality": "Medium",
+                "evidence_quote": "Communication style evaluated based on audio transcription metrics."
             },
-            "timeline": video["timeline"],
-            "security_evidence": security["evidence"],
-            "event_log": security["event_log"],
-            "analysis_confidence": quality["confidence"]
+            "behavioral_analysis": {
+                "eye_contact": heuristics["eye_contact"],
+                "attentiveness": heuristics["attention_score"],
+                "emotional_stability": int(max(20.0, 100 - heuristics["anxious_ratio"] * 3)),
+                "honesty_indicators": "Medium",
+                "stress_indicators": "Medium",
+                "distraction_detection": "None" if heuristics["attention_score"] > 80 else "Minor distraction" if heuristics["attention_score"] > 50 else "Highly distracted",
+                "engagement_score": int(heuristics["engagement_score"]),
+                "emotion_timeline": [],
+                "suspicious_behavior_flags": [
+                    {"timestamp": "Variable", "flag": "Tab Switch", "description": f"Browser tab switched {heuristics.get('interruptions', 0)} times"}
+                ] if heuristics.get("interruptions", 0) > 0 else [],
+                "integrity_evidence": f"Webcam feed gaze stability at {heuristics['eye_contact']}% and visual attention of {heuristics['attention_score']}%."
+            },
+            "interview_intelligence": {
+                "interviewer_speaking_ratio": heuristics["interviewer_ratio"],
+                "candidate_speaking_ratio": heuristics["speaking_ratio"],
+                "technical_depth_estimation": int(self.resume_score * 100) if self.resume_score <= 1.0 else int(self.resume_score),
+                "leadership_indicators": "Average",
+                "communication_indicators": "Average",
+                "professionalism_indicators": "Medium"
+            },
+            "technical_evaluation": {
+                "technical_understanding": int(self.resume_score * 100) if self.resume_score <= 1.0 else int(self.resume_score),
+                "depth_of_answers": int(self.resume_score * 90) if self.resume_score <= 1.0 else int(self.resume_score * 0.9),
+                "leadership_indicators": "Average",
+                "problem_solving_quality": "Average",
+                "evidence_quote": "Technical understanding evaluated based on matching resume alignment."
+            }
         }
-
 
 async def generate_interview_feedback(candidate_id: str) -> dict:
+    # Set status to analyzing first
+    await candidates_col.update_one(
+        {"_id": ObjectId(candidate_id)},
+        {"$set": {
+            "status": "interview_analyzing",
+            "interview.status": "analyzing",
+            "updated_at": datetime.utcnow()
+        }}
+    )
     candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
     if not candidate:
         raise ValueError("Candidate not found")
+
+    job = await jobs_col.find_one({"_id": ObjectId(candidate["job_id"])})
+    job_title = job.get("title", "Software Engineer") if job else "Software Engineer"
+    job_description = job.get("description", "") if job else ""
 
     face_stats = candidate.get("face_stats", [])
     transcripts = candidate.get("transcript", [])
     resume_score = float(candidate.get("score", 0.0))
 
-    analyzer = MultimodalAnalyzer(face_stats, transcripts, resume_score)
-    result = analyzer.analyze()
+    # Fetch Jitsi session doc to compute the actual duration and timestamps
+    session = await interview_sessions_col.find_one(
+        {"candidate_id": candidate_id},
+        sort=[("start_time", -1)]
+    )
+    
+    start_time_raw = None
+    end_time_raw = None
+    
+    if session:
+        start_time_raw = session.get("start_time")
+        end_time_raw = session.get("end_time") or session.get("duration")
+        
+    if not start_time_raw:
+        start_time_raw = candidate.get("interview", {}).get("start_time")
+        end_time_raw = candidate.get("interview", {}).get("end_time")
 
-    # Try to enhance with Cohere for a more human summary (Optional)
-    api_key = os.getenv("COHERE_API_KEY")
-    if api_key and transcripts:
-        try:
-            import cohere
-            client = cohere.Client(api_key)
-            prompt = (
-                "You are an Elite Executive Recruiter writing internal notes about a candidate's behavior. "
-                "Provide a concise, objective evaluation of this candidate's performance. \n\n"
-                "DETECTED DATA:\n"
-                f"- Confidence Level: {result['analysis_confidence']}\n"
-                f"- Communication: {result['communication']} ({result['metrics']['word_count']} words used)\n"
-                f"- Visual Presence: {result['attention']}\n"
-                f"- Security Status: {result['cheating_risk']}\n"
-                f"- Verdict: {result['verdict']}\n\n"
-                "STRICT EVALUATION RULES:\n"
-                "1. WRITE LIKE A HUMAN RECRUITER. (e.g., 'Candidate struggled with clarity' vs 'Communication is low').\n"
-                "2. NO GENERIC AI PRAISE. Do not use words like 'excellent', 'fantastic', or 'great' unless data is perfect.\n"
-                "3. BE CONSERVATIVE. If communication was variable, note the inconsistency.\n"
-                "4. HIGHLIGHT CONCERNS. Mention if visual attention was lacking or if integrity events occurred.\n"
-                "5. FORMAT: Two concise, professional bullet points."
-            )
-            resp = client.chat(model="command-r-plus-08-2024", message=prompt)
-            result["reasoning"] = resp.text.strip()
-        except Exception:
-            pass
+    duration_secs = 0.0
+    start_time = None
+    end_time = None
+    
+    if start_time_raw:
+        if isinstance(start_time_raw, str):
+            s_raw = start_time_raw
+            if s_raw.endswith("Z"):
+                s_raw = s_raw[:-1]
+            start_time = datetime.fromisoformat(s_raw)
+        else:
+            start_time = start_time_raw
+            
+        if end_time_raw is not None:
+            if isinstance(end_time_raw, (int, float)):
+                duration_secs = float(end_time_raw)
+                from datetime import timedelta
+                end_time = start_time + timedelta(seconds=duration_secs)
+            else:
+                if isinstance(end_time_raw, str):
+                    e_raw = end_time_raw
+                    if e_raw.endswith("Z"):
+                        e_raw = e_raw[:-1]
+                    end_time = datetime.fromisoformat(e_raw)
+                else:
+                    end_time = end_time_raw
+        else:
+            end_time = datetime.utcnow()
+            
+        if start_time.tzinfo is not None:
+            start_time = start_time.astimezone(timezone.utc).replace(tzinfo=None)
+        if end_time.tzinfo is not None:
+            end_time = end_time.astimezone(timezone.utc).replace(tzinfo=None)
+            
+        duration_secs = (end_time - start_time).total_seconds()
+    else:
+        end_time = datetime.utcnow()
 
-    # Save to candidate doc
+    # Format join_time and completion_time with 'Z' suffix to denote UTC timezone
+    if start_time:
+        join_time = start_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        join_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if end_time:
+        completion_time = end_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        completion_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Duration in minutes
+    duration_mins = max(0, int(duration_secs / 60))
+
+    # Fetch recruiter join status
+    recruiter_joined = bool(
+        candidate.get("interview", {}).get("recruiter_joined", False) or
+        (session and session.get("recruiter_joined", False))
+    )
+
+    # ── VALIDATION RULES ──
+    # 1. Candidate actually joined meeting
+    candidate_joined = bool(
+        candidate.get("interview", {}).get("candidate_joined_session", False) or
+        candidate.get("interview", {}).get("candidate_joined", False) or
+        len(face_stats) > 0 or
+        len(transcripts) > 0
+    )
+
+    # 2. Transcript exists and has content
+    transcript_exists = len(transcripts) > 0
+
+    # Calculate transcript word count
+    transcript_word_count = 0
+    for t in transcripts:
+        if isinstance(t, dict):
+            text_content = t.get("text", "")
+        else:
+            text_content = str(t)
+        transcript_word_count += len(text_content.split())
+
+    # 3. Transcript length > minimum threshold (20 words)
+    transcript_length_valid = transcript_word_count >= 20
+
+    # 4. Audio duration > minimum threshold (60 seconds)
+    duration_valid = duration_secs >= 60.0
+
+    # 5. Webcam activity detected
+    webcam_detected = len(face_stats) > 0
+
+    validation_passed = (
+        recruiter_joined and
+        candidate_joined and
+        transcript_exists and
+        transcript_length_valid and
+        duration_valid and
+        webcam_detected
+    )
+
+    if not validation_passed:
+        missing = []
+        if not recruiter_joined: missing.append("Recruiter did not join meeting")
+        if not candidate_joined: missing.append("Candidate did not join meeting")
+        if not transcript_exists: missing.append("Transcript does not exist")
+        if not transcript_length_valid: missing.append(f"Transcript too short ({transcript_word_count}/20 words)")
+        if not duration_valid: missing.append(f"Audio duration too short ({int(duration_secs)}/60 seconds)")
+        if not webcam_detected: missing.append("No webcam activity detected")
+
+        reasoning_msg = "Insufficient Interview Evidence - No AI evaluation generated"
+
+        result = {
+            "incomplete": True,
+            "recommendation": "Reject",
+            "verdict": "Interview Incomplete",
+            "reasoning": reasoning_msg,
+            "metadata": {
+                "total_duration": f"{duration_mins} minutes",
+                "join_time": join_time,
+                "completion_time": completion_time,
+                "attendance": "Present" if candidate_joined else "Absent",
+                "error_details": "Insufficient interview evidence (webcam, microphone, audio/transcript missing, or duration under 5 minutes)."
+            },
+            "metrics": {
+                "comm_score": 0,
+                "conf_score": 0,
+                "risk_score": 0,
+                "attention_score": 0,
+                "speaking_ratio": 0,
+                "eye_contact": 0,
+                "word_count": 0
+            },
+            "communication_analysis": {
+                "clarity_score": 0,
+                "confidence_score": 0,
+                "professionalism": 0,
+                "engagement": 0,
+                "speech_pace": "Normal",
+                "hesitation_detection": "High",
+                "filler_word_detection": {"um_uh_count": 0, "like_count": 0, "other_fillers_count": 0},
+                "sentiment_analysis": "Neutral",
+                "response_quality": "Low"
+            },
+            "behavioral_analysis": {
+                "eye_contact": 0,
+                "attentiveness": 0,
+                "emotional_stability": 0,
+                "honesty_indicators": "Low",
+                "stress_indicators": "High",
+                "distraction_detection": "Highly distracted",
+                "engagement_score": 0,
+                "emotion_timeline": [],
+                "suspicious_behavior_flags": []
+            },
+            "interview_intelligence": {
+                "interviewer_speaking_ratio": 0,
+                "candidate_speaking_ratio": 0,
+                "technical_depth_estimation": 0,
+                "leadership_indicators": "Weak",
+                "communication_indicators": "Poor",
+                "professionalism_indicators": "Low"
+            },
+            "technical_evaluation": {
+                "technical_understanding": 0,
+                "depth_of_answers": 0,
+                "leadership_indicators": "Weak",
+                "problem_solving_quality": "Basic"
+            },
+            "timeline": [],
+            "event_log": [{"category": "Validation", "severity": "Critical", "message": m, "time": "N/A"} for m in missing],
+            "cheating_risk": "Low",
+            "communication": "Normal",
+            "confidence": "Low",
+            "attention": "Variable",
+            "analysis_confidence": "Low",
+            "explanation_details": {
+                "communication": "No audio captured.",
+                "confidence": "No webcam video stream.",
+                "security": "Insufficient interview evidence."
+            }
+        }
+
+        await candidates_col.update_one(
+            {"_id": ObjectId(candidate_id)},
+            {"$set": {
+                "ai_analysis": result,
+                "status": "interview_incomplete",
+                "interview.status": "completed",
+                "updated_at": datetime.utcnow()
+            }}
+        )
+        return result
+
+    # Standard analyzer runs if validation passes
+    analyzer = MultimodalAnalyzer(
+        face_stats=face_stats,
+        transcripts=transcripts,
+        resume_score=resume_score,
+        job_title=job_title,
+        job_description=job_description,
+        total_duration_secs=duration_secs
+    )
+
+    heuristics = analyzer.run_heuristics()
+    synth = await analyzer.synthesize_analysis(heuristics, candidate.get("name", "Candidate"))
+
+    result = {
+        "recommendation": synth.get("recommendation", "Hold"),
+        "verdict": synth.get("verdict", "Review pending"),
+        "reasoning": synth.get("reasoning", "Interview completed."),
+        
+        "metadata": {
+            "total_duration": f"{duration_mins} minutes",
+            "join_time": join_time,
+            "completion_time": completion_time,
+            "interruptions": heuristics["interruptions"],
+            "attendance": "Present"
+        },
+        
+        "communication_analysis": synth.get("communication_analysis", {}),
+        "behavioral_analysis": synth.get("behavioral_analysis", {}),
+        "interview_intelligence": synth.get("interview_intelligence", {}),
+        "technical_evaluation": synth.get("technical_evaluation", {}),
+        
+        "metrics": {
+            "comm_score": heuristics["comm_score"],
+            "conf_score": synth.get("communication_analysis", {}).get("confidence_score", heuristics["eye_contact"]),
+            "risk_score": heuristics["risk_score"],
+            "attention_score": heuristics["attention_score"],
+            "speaking_ratio": heuristics["speaking_ratio"],
+            "interviewer_speaking_ratio": synth.get("interview_intelligence", {}).get("interviewer_speaking_ratio", heuristics["interviewer_ratio"]),
+            "candidate_speaking_ratio": synth.get("interview_intelligence", {}).get("candidate_speaking_ratio", heuristics["speaking_ratio"]),
+            "eye_contact": heuristics["eye_contact"],
+            "word_count": heuristics["word_count"]
+        },
+        
+        "timeline": heuristics["timeline"],
+        "event_log": heuristics["event_log"],
+        
+        # Compatibility fields
+        "cheating_risk": heuristics["cheating_risk"],
+        "communication": synth.get("communication_analysis", {}).get("speech_pace", "Normal"),
+        "confidence": "High" if heuristics["eye_contact"] > 80 else "Medium" if heuristics["eye_contact"] > 50 else "Low",
+        "attention": "High" if heuristics["attention_score"] > 80 else "Focused" if heuristics["attention_score"] > 60 else "Variable",
+        "analysis_confidence": "High" if heuristics["word_count"] > 10 else "Low",
+        "explanation_details": {
+            "communication": f"Clear articulation. Pace: {synth.get('communication_analysis', {}).get('speech_pace', 'Normal')}.",
+            "confidence": f"Eye contact and gaze stability at {heuristics['eye_contact']}%",
+            "security": f"Proctoring risk evaluated as {heuristics['cheating_risk']}."
+        }
+    }
+
     await candidates_col.update_one(
         {"_id": ObjectId(candidate_id)},
-        {"$set": {"ai_analysis": result, "status": "interview_analyzed"}}
+        {"$set": {
+            "ai_analysis": result,
+            "status": "interview_analyzed",
+            "interview.status": "analyzed",
+            "updated_at": datetime.utcnow()
+        }}
     )
 
     return result

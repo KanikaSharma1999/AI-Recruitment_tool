@@ -1,22 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import API from '../api/client';
-import { MdErrorOutline, MdRefresh } from 'react-icons/md';
+import { MdErrorOutline, MdRefresh, MdCheckCircle } from 'react-icons/md';
 import toast from 'react-hot-toast';
 
 export default function SystemStatusBanner() {
-  const [status, setStatus] = useState('ok');
+  const [status, setStatus] = useState('ok');   // 'ok' | 'degraded' | 'offline'
   const [dbError, setDbError] = useState(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [syncStatus, setSyncStatus] = useState(null);
 
-  const checkHealth = async (showToast = false) => {
+  const checkHealth = useCallback(async (showToast = false) => {
     try {
       if (showToast) setIsRetrying(true);
       const { data } = await API.get('/health');
-      setStatus(data.status);
-      
-      // Extract DB offline status
-      if (data.database && data.database.status === 'offline') {
+
+      // Backend now returns 'ok' or 'degraded'
+      const s = data.status === 'ok' ? 'ok' : 'degraded';
+      setStatus(s);
+
+      // Extract DB offline details
+      if (data.database && data.database.status !== 'connected') {
         setDbError(data.database.last_error || 'Database connection unavailable');
       } else {
         setDbError(null);
@@ -30,21 +33,22 @@ export default function SystemStatusBanner() {
         setSyncStatus(null);
       }
     } catch (err) {
+      // Only show 'offline' banner when the request itself fails (network error)
       setStatus('offline');
-      setDbError('Backend server is unreachable');
+      setDbError('Backend server is unreachable — verify it is running on port 8000');
       setSyncStatus(null);
     } finally {
       setIsRetrying(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     checkHealth();
-    // Poll more frequently if background sync is active to show smooth progress updates
-    const intervalTime = syncStatus && syncStatus.status === 'syncing' ? 3000 : 15000;
+    // Poll more frequently during active vector sync
+    const intervalTime = syncStatus && syncStatus.status === 'syncing' ? 3000 : 20000;
     const interval = setInterval(checkHealth, intervalTime);
     return () => clearInterval(interval);
-  }, [syncStatus]);
+  }, [checkHealth, syncStatus?.status]);
 
   const keyframesStyle = `
     @keyframes sync-pulse {
@@ -77,7 +81,7 @@ export default function SystemStatusBanner() {
         top: 0,
         zIndex: 9999,
         boxShadow: '0 2px 8px rgba(30, 58, 138, 0.06)',
-        fontFamily: 'Inter, system-ui, sans-serif'
+        fontFamily: 'Poppins, system-ui, sans-serif'
       }}>
         <style>{keyframesStyle}</style>
 

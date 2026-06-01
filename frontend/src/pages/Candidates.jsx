@@ -15,10 +15,10 @@ const STATUSES = [
   { value: 'screening', label: 'Screening' },
   { value: 'shortlisted', label: 'Shortlisted' },
   { value: 'interview_scheduled', label: 'Interview Scheduled' },
-  { value: 'interviewed', label: 'Interviewed' },
-  { value: 'selected', label: 'Selected' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'on_hold', label: 'On Hold' }
+  { value: 'interview_completed', label: 'Interview Completed' },
+  { value: 'offered', label: 'Offered' },
+  { value: 'hired', label: 'Hired' },
+  { value: 'rejected', label: 'Rejected' }
 ];
 
 export default function Candidates() {
@@ -66,6 +66,17 @@ export default function Candidates() {
     } catch { toast.error('Failed to update status'); }
   };
 
+  const handleRerankAll = async () => {
+    const loadingToast = toast.loading('Re-ranking candidates and processing embeddings...');
+    try {
+      await API.post('/rerank-all-candidates');
+      toast.success('Successfully re-ranked all candidates!', { id: loadingToast });
+      fetchCandidates();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to re-rank candidates', { id: loadingToast });
+    }
+  };
+
   const downloadReport = async (fmt) => {
     const params = jobFilter ? `?format=${fmt}&job_id=${jobFilter}` : `?format=${fmt}`;
     const r = await API.get(`/report/download${params}`, { responseType: 'blob' });
@@ -90,6 +101,68 @@ export default function Candidates() {
     return Math.min(100, Math.max(0, Math.round(Number(v))));
   };
 
+  const getCandidateJDStatus = (c) => {
+    const candJob = jobs.find(j => j.id === c.job_id || j._id === c.job_id);
+    const jdExists = !!(candJob && candJob.description && candJob.description.trim());
+    return { jdExists, candJob };
+  };
+
+  const renderCandidateScore = (c) => {
+    const hasScore = c.ai_match_score !== null && c.ai_match_score !== undefined;
+    
+    if (hasScore) {
+      const scoreVal = safeScore(c.ai_match_score);
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: scoreVal >= 70 ? 'var(--success)' : scoreVal >= 45 ? 'var(--warning-dark)' : 'var(--danger)' }}>
+            {scoreVal}%
+          </span>
+          <div style={{ height: 5, background: '#e5e7eb', borderRadius: 999, width: 60, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${scoreVal}%`, background: scoreVal >= 70 ? 'var(--success)' : scoreVal >= 45 ? 'var(--warning)' : 'var(--danger)', borderRadius: 999 }} />
+          </div>
+        </div>
+      );
+    }
+    
+    const verdict = c.ai_verdict;
+    if (verdict === "Missing JD" || verdict === "Awaiting JD") {
+      return (
+        <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-secondary)' }} title="Please add a description to the job to allow ranking.">
+          ⏳ Awaiting JD
+        </span>
+      );
+    }
+    
+    if (verdict === "Resume parse failed" || verdict === "Embedding generation failed" || verdict === "Extraction confidence too low") {
+      return (
+        <span 
+          style={{ 
+            fontSize: 12, 
+            fontWeight: 600, 
+            color: 'var(--danger-dark)', 
+            background: 'var(--danger-light)',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            cursor: 'help',
+            border: '1px solid #fee2e2',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px'
+          }} 
+          title={`Ranking failed: ${verdict}`}
+        >
+          ⚠️ {verdict}
+        </span>
+      );
+    }
+
+    return (
+      <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-muted)' }}>
+        Awaiting ranking
+      </span>
+    );
+  };
+
   return (
     <div className="layout">
       <Sidebar />
@@ -102,7 +175,8 @@ export default function Candidates() {
               <p>{candidates.length} candidates found</p>
             </div>
             <div style={{ display:'flex', gap:10 }}>
-              <button className="btn btn-outline btn-sm" onClick={() => navigate('/compare')}>⚖ Compare</button>
+              <button className="btn btn-secondary btn-sm" style={{ background: 'var(--primary)', color: '#ffffff', borderColor: 'var(--primary)' }} onClick={handleRerankAll}>🔄 Re-rank All</button>
+              <button className="btn btn-outline btn-sm" onClick={() => navigate('/compare')}>Compare</button>
               <button className="btn btn-outline btn-sm" onClick={() => downloadReport('csv')}><MdDownload /> CSV</button>
               <button className="btn btn-outline btn-sm" onClick={() => downloadReport('pdf')}><MdDownload /> PDF</button>
               <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
@@ -118,7 +192,7 @@ export default function Candidates() {
               <form onSubmit={handleSearch} style={{ display:'flex', gap:8, flex:1, minWidth:200 }}>
                 <input className="form-input" placeholder="Search name or email…"
                   value={search} onChange={e => setSearch(e.target.value)} style={{ flex:1 }} />
-                <button type="submit" className="btn btn-primary btn-sm"><MdSearch /></button>
+                <button type="submit" className="btn btn-primary"><MdSearch size={18} /> Search</button>
               </form>
 
               <select className="form-select" style={{ width:160 }} value={jobFilter} onChange={e => setJobFilter(e.target.value)}>
@@ -138,10 +212,10 @@ export default function Candidates() {
 
               <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                 <label style={{ fontSize:12, fontWeight:600 }}>Score:</label>
-                <input type="number" min={0} max={100} placeholder="Min" className="form-input" style={{ width:60, padding:'6px' }}
+                <input type="number" min={0} max={100} placeholder="Min" className="form-input" style={{ width:70 }}
                   value={minScore} onChange={e => setMinScore(e.target.value)} onBlur={fetchCandidates} />
                 <span style={{ fontSize:12 }}>-</span>
-                <input type="number" min={0} max={100} placeholder="Max" className="form-input" style={{ width:60, padding:'6px' }}
+                <input type="number" min={0} max={100} placeholder="Max" className="form-input" style={{ width:70 }}
                   value={maxScore} onChange={e => setMaxScore(e.target.value)} onBlur={fetchCandidates} />
               </div>
             </div>
@@ -149,68 +223,107 @@ export default function Candidates() {
 
           {/* Table or Pipeline */}
           {viewMode === 'list' ? (
-          <div className="card" style={{ padding:0 }}>
-            <div className="table-wrapper">
+          <div className="card" style={{ padding:0, overflow:'hidden' }}>
+            <div className="table-wrapper" style={{ border:'none', borderRadius:0 }}>
               {loading ? (
                 <div style={{ padding:40, textAlign:'center' }}><div className="spinner" style={{ margin:'0 auto' }} /></div>
               ) : candidates.length === 0 ? (
                 <div className="empty-state">
-                  <MdFilterList style={{ fontSize:48, color:'#94a3b8' }} />
+                  <MdFilterList style={{ fontSize:48, color:'var(--text-muted)' }} />
                   <p style={{ marginTop:12 }}>No candidates match your filters.</p>
                 </div>
               ) : (
-                <table>
-                  <thead>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-secondary)' }}>
                     <tr>
-                      <th>#</th><th>Name</th><th>Email</th><th>AI Score</th>
-                      <th>Recommendation</th><th>Status</th><th>Actions</th>
+                      <th style={{ width: '50px', textAlign: 'center' }}>#</th>
+                      <th>Candidate Name</th>
+                      <th>Email / Contact</th>
+                      <th>AI Match</th>
+                      <th>AI Verdict</th>
+                      <th>Current Stage</th>
+                      <th style={{ width: '280px', textAlign: 'right' }}>Recruiter Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {candidates.map((c, i) => (
                       <tr key={c.id}>
-                        <td style={{ color:'var(--text-secondary)', fontSize:12 }}>{i + 1}</td>
-                        <td style={{ fontWeight:600 }}>{c.name}</td>
-                        <td style={{ fontSize:12, color:'var(--text-secondary)' }}>{c.email}</td>
+                        <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500 }}>{i + 1}</td>
                         <td>
-                          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-                            <span style={{ fontSize:18, fontWeight:800, color: safeScore(c.score)>=70?'#059669':safeScore(c.score)>=45?'#d97706':'#dc2626' }}>
-                              {safeScore(c.score)}%
-                            </span>
-                            <div style={{ height:4, background:'#e5e7eb', borderRadius:999, width:72, overflow:'hidden' }}>
-                              <div style={{ height:'100%', width:`${safeScore(c.score)}%`, background: safeScore(c.score)>=70?'#10b981':safeScore(c.score)>=45?'#f59e0b':'#ef4444', borderRadius:999 }} />
-                            </div>
-                          </div>
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{c.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{c.location || 'Remote'}</div>
                         </td>
                         <td>
-                          {c.hiring_summary?.recommendation ? (
-                            <span style={{
-                              padding:'3px 10px', borderRadius:999, fontSize:11, fontWeight:700,
-                              background: {'Strong Hire':'#d1fae5','Hire':'#dbeafe','Hold':'#fef3c7','Reject':'#fee2e2'}[c.hiring_summary.recommendation]||'#f3f4f6',
-                              color: {'Strong Hire':'#065f46','Hire':'#1e40af','Hold':'#92400e','Reject':'#991b1b'}[c.hiring_summary.recommendation]||'#6b7280',
-                            }}>
-                              {c.hiring_summary.recommendation}
-                            </span>
-                          ) : (
-                            <span style={{ fontSize:12, color:'var(--text-muted)' }}>Not ranked</span>
-                          )}
+                          <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{c.email}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{c.phone || 'No phone'}</div>
                         </td>
-                        <td><StatusBadge status={c.status} /></td>
                         <td>
-                          <div className="actions-cell">
-                            <button className="btn btn-outline btn-sm" title="Pending"
-                              onClick={() => updateStatus(c.id, 'pending')}>P</button>
-                            <button className="btn btn-success btn-sm" title="Shortlist"
-                              onClick={() => updateStatus(c.id, 'shortlisted')}><MdThumbUp /></button>
-                            <button className="btn btn-danger btn-sm" title="Reject"
-                              onClick={() => updateStatus(c.id, 'rejected')}><MdThumbDown /></button>
-                            <button className="btn btn-info btn-sm" title="Schedule Interview"
-                              onClick={() => setInterviewCandidate(c)}><MdCalendarToday /></button>
-                            <button className="btn btn-purple btn-sm" title="Select"
-                              onClick={() => updateStatus(c.id, 'selected')}><MdCheckCircle /></button>
-                            <button className="btn btn-outline btn-sm" title="View Profile"
-                              onClick={() => navigate(`/candidates/${c.id}`)}><MdVisibility /></button>
-                            <button className="btn btn-outline btn-sm" title="Delete" style={{ borderColor:'var(--danger)', color:'var(--danger)' }}
+                          {renderCandidateScore(c)}
+                        </td>
+                        <td>
+                          {(() => {
+                            const hasScore = c.ai_match_score !== null && c.ai_match_score !== undefined;
+                            const verdict = c.ai_verdict;
+
+                            if (hasScore && verdict && !["Awaiting JD", "Missing JD", "Resume parse failed", "Embedding generation failed", "Extraction confidence too low"].includes(verdict)) {
+                              return (
+                                <span className={`badge badge-${verdict.toLowerCase().replace(' ', '-')}`}>
+                                  {verdict}
+                                </span>
+                              );
+                            }
+                            
+                            if (verdict) {
+                              return (
+                                <span style={{ fontSize: 11.5, color: verdict.includes("failed") || verdict.includes("low") || verdict.includes("Missing") ? 'var(--danger-dark)' : 'var(--text-secondary)', fontStyle: 'italic' }}>
+                                  {verdict}
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                Awaiting ranking
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td>
+                          <StatusBadge status={c.status} interview={c.interview} />
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                            <button className="btn btn-outline btn-xs" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => navigate(`/candidates/${c.id}`)}>
+                              Profile
+                            </button>
+                            <select 
+                              className="form-select"
+                              value={c.pipeline_stage || c.status || 'applied'} 
+                              onChange={(e) => updateStatus(c.id, e.target.value)}
+                              style={{ width: '110px', padding: '3px 6px', fontSize: 11, height: '24px', borderRadius: '4px' }}
+                            >
+                              <option value="applied">Applied</option>
+                              <option value="screening">Screening</option>
+                              <option value="shortlisted">Shortlist</option>
+                              <option value="interview_scheduled">Interview</option>
+                              <option value="interview_completed">Completed</option>
+                              <option value="offered">Offer</option>
+                              <option value="hired">Hired</option>
+                              <option value="rejected">Reject</option>
+                            </select>
+                            {(c.pipeline_stage || c.status) !== 'interview_scheduled' && (c.pipeline_stage || c.status) !== 'interview_completed' && (c.pipeline_stage || c.status) !== 'interview_analyzed' ? (
+                              <button className="btn btn-primary btn-xs" style={{ fontSize: 11, padding: '3px 8px', background: 'var(--primary)' }} onClick={() => setInterviewCandidate(c)}>
+                                Invite
+                              </button>
+                            ) : (
+                              <button className="btn btn-outline btn-xs" style={{ fontSize: 11, padding: '3px 8px', color: 'var(--primary)', borderColor: 'var(--primary-light)' }} onClick={() => setInterviewCandidate(c)}>
+                                Reschedule
+                              </button>
+                            )}
+                            <button 
+                              className="btn btn-ghost btn-xs" 
+                              style={{ color: 'var(--danger)', padding: '4px', minWidth: 'auto' }} 
+                              title="Delete Candidate"
                               onClick={() => {
                                 if (window.confirm("Are you sure you want to delete this candidate?")) {
                                   API.delete(`/candidates/${c.id}`).then(() => {
@@ -218,7 +331,10 @@ export default function Candidates() {
                                     fetchCandidates();
                                   }).catch(() => toast.error("Failed to delete candidate"));
                                 }
-                              }}><MdDelete /></button>
+                              }}
+                            >
+                              <MdDelete size={14} />
+                            </button>
                           </div>
                         </td>
                       </tr>

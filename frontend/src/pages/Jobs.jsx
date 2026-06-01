@@ -69,7 +69,7 @@ export default function Jobs() {
 
           {showForm && (
             <div className="card" style={{ marginBottom:20 }}>
-              <h3 style={{ marginBottom:16, fontSize:15, fontWeight:700 }}>Create New Job</h3>
+              <h3 style={{ marginBottom:16, fontSize:15, fontWeight:600 }}>Create New Job</h3>
               <form onSubmit={createJob} style={{ display:'flex', flexDirection:'column', gap:14 }}>
                 <div className="form-grid">
                   <div className="form-group">
@@ -119,7 +119,7 @@ export default function Jobs() {
               {jobs.map(j => (
                 <div key={j.id} className="card" style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontWeight:700, fontSize:16 }}>{j.title}</div>
+                    <div style={{ fontWeight:600, fontSize:16 }}>{j.title}</div>
                     <div style={{ color:'var(--text-secondary)', fontSize:13, marginTop:2 }}>
                       {j.company} {j.location && `· ${j.location}`} · Posted {j.created_at ? new Date(j.created_at).toLocaleDateString() : ''}
                     </div>
@@ -130,16 +130,16 @@ export default function Jobs() {
                   <div style={{ marginLeft:20, textAlign:'center', flexShrink:0, display:'flex', flexDirection:'column', gap:8, alignItems:'center' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:13 }}>
                       <MdPeople style={{ color:'var(--primary)' }} />
-                      <span style={{ fontWeight:700 }}>{j.candidate_count}</span>
+                      <span style={{ fontWeight:600 }}>{j.candidate_count}</span>
                       <span style={{ color:'var(--text-secondary)' }}>candidates</span>
                     </div>
                     <div style={{ display:'flex', gap:6, flexDirection: 'column' }}>
                       <div style={{ display:'flex', gap:6 }}>
                         <button className="btn btn-outline btn-sm" style={{ flex: 1, padding: '4px 8px', fontSize: 12 }} onClick={() => downloadReport(j.id, 'pdf')} disabled={!j.candidate_count}>
-                          📄 PDF
+                          PDF
                         </button>
                         <button className="btn btn-outline btn-sm" style={{ flex: 1, padding: '4px 8px', fontSize: 12 }} onClick={() => downloadReport(j.id, 'excel')} disabled={!j.candidate_count}>
-                          📊 Excel
+                          Excel
                         </button>
                       </div>
                       <button className="btn btn-outline btn-sm" style={{ borderColor:'var(--danger)', color:'var(--danger)', width: '100%' }}
