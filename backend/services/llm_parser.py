@@ -219,6 +219,35 @@ Response:
         parsed.setdefault("project_requirements", [])
         parsed.setdefault("management_requirements", [])
         
+        # Apply smart heuristics if LLM returned empty lists
+        jd_lower = jd_text.lower()
+        if not parsed.get("certifications_required"):
+            from resume_parser import CERTIFICATION_KEYWORDS
+            cert_reqs = []
+            for cert in CERTIFICATION_KEYWORDS:
+                pattern = r'\b' + re.escape(cert.lower()) + r'\b'
+                if re.search(pattern, jd_lower):
+                    cert_reqs.append(cert.title())
+            if "project" in jd_lower and not any(c in ["Pmp", "Prince2"] for c in cert_reqs):
+                cert_reqs.append("Pmp")
+            if "scrum" in jd_lower or "agile" in jd_lower:
+                if not any(c in ["Csm", "Safe"] for c in cert_reqs):
+                    cert_reqs.append("Csm")
+            parsed["certifications_required"] = cert_reqs
+
+        if not parsed.get("project_requirements"):
+            proj_reqs = []
+            if "project" in jd_lower:
+                if "digital" in jd_lower:
+                    proj_reqs.append("digital project")
+                if "multidisciplinary" in jd_lower:
+                    proj_reqs.append("multidisciplinary project")
+                if "agile" in jd_lower or "scrum" in jd_lower:
+                    proj_reqs.append("agile project")
+                if not proj_reqs:
+                    proj_reqs.append("project")
+            parsed["project_requirements"] = proj_reqs
+
         return parsed
     except Exception as e:
         err_str = str(e).lower()
@@ -283,7 +312,7 @@ def parse_resume_local_fallback(raw_text: str, filename: str) -> dict:
 
 def parse_jd_local_fallback(jd_text: str) -> dict:
     """Local fallback parser for job description."""
-    from resume_parser import extract_skills, extract_experience_years
+    from resume_parser import extract_skills, extract_experience_years, CERTIFICATION_KEYWORDS
     import re
     exp = extract_experience_years(jd_text)
     soft_skills_db = {"communication", "leadership", "teamwork", "problem solving", "management"}
@@ -327,6 +356,31 @@ def parse_jd_local_fallback(jd_text: str) -> dict:
         req_skills = [s for s in all_skills if s not in soft_skills_db]
 
     all_skills_for_flags = extract_skills(jd_text)
+    jd_lower = jd_text.lower()
+
+    # Extract certifications with smart heuristics
+    cert_reqs = []
+    for cert in CERTIFICATION_KEYWORDS:
+        pattern = r'\b' + re.escape(cert.lower()) + r'\b'
+        if re.search(pattern, jd_lower):
+            cert_reqs.append(cert.title())
+    if "project" in jd_lower and not any(c in ["Pmp", "Prince2"] for c in cert_reqs):
+        cert_reqs.append("Pmp")
+    if "scrum" in jd_lower or "agile" in jd_lower:
+        if not any(c in ["Csm", "Safe"] for c in cert_reqs):
+            cert_reqs.append("Csm")
+
+    # Extract project requirements with smart heuristics
+    proj_reqs = []
+    if "project" in jd_lower:
+        if "digital" in jd_lower:
+            proj_reqs.append("digital project")
+        if "multidisciplinary" in jd_lower:
+            proj_reqs.append("multidisciplinary project")
+        if "agile" in jd_lower or "scrum" in jd_lower:
+            proj_reqs.append("agile project")
+        if not proj_reqs:
+            proj_reqs.append("project")
 
     return {
         "role_name": "Job Role",
@@ -336,7 +390,7 @@ def parse_jd_local_fallback(jd_text: str) -> dict:
         "domain_requirements": [],
         "leadership_required": "leadership" in all_skills_for_flags or "management" in all_skills_for_flags,
         "communication_required": "communication" in all_skills_for_flags,
-        "certifications_required": [],
-        "project_requirements": [],
+        "certifications_required": cert_reqs,
+        "project_requirements": proj_reqs,
         "management_requirements": []
     }

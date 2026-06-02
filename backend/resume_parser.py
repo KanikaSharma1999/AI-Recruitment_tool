@@ -110,7 +110,10 @@ SKILLS_DB = {
     "rest", "soap", "grpc", "tdd", "bdd", "ddd", "solid",
     "communication", "leadership", "teamwork", "problem solving",
     "project management", "data analysis", "excel", "jira", "confluence",
-    "product management",
+    "product management", "management", "digital transformation",
+    "educational pedagogy", "laws and regulations", "analytical skills",
+    "problem-solving skills", "microsoft office", "google suite", "crm",
+    "english language",
 
     # ── Blockchain ────────────────────────────────────────────────────────────
     "blockchain", "solidity", "ethereum", "web3", "smart contracts",
@@ -122,6 +125,14 @@ SKILLS_DB = {
 #  value = canonical skill name (must be in SKILLS_DB or close enough)
 # ═══════════════════════════════════════════════════════════════════════════════
 SKILL_SYNONYMS: dict[str, str] = {
+    # Management and soft skills aliases
+    "managing projects": "project management",
+    "project manager": "project management",
+    "pedagogy": "educational pedagogy",
+    "analytical": "analytical skills",
+    "problem-solving": "problem-solving skills",
+    "english": "english language",
+
     # JavaScript aliases
     "js": "javascript",
     "es6": "javascript",
@@ -341,10 +352,7 @@ def is_valid_name(candidate: str) -> bool:
         return False
     if not all(w.isalpha() for w in words):
         return False
-    if not all(w[0].isupper() for w in words):
-        return False
-    if candidate == candidate.upper():
-        return False
+    # Allow uppercase names and all-caps names (remove validation rejecting uppercase)
     if candidate == candidate.lower():
         return False
     if any(w.lower() in BANNED_WORDS for w in words):
@@ -363,8 +371,10 @@ def extract_candidate_details(raw_text: str, filename: str) -> dict:
         raw_username = email.split("@")[0]
         email_username = re.sub(r'[^a-z]', '', raw_username.lower())
 
-    phone_match = re.search(r'(\+?\d{1,3}[.\-\s]?)?\d{10}', raw_text)
-    phone = phone_match.group(0) if phone_match else "Not Found"
+    # Supported phone formats: +91 90354 89733, +91-9035489733, 90354 89733, 99000 04144
+    phone_pattern = r'(?:(?:\+?\d{1,3}[-\s]?)?\d{5}[-\s]\d{5})|(?:(?:\+?\d{1,3}[-\s]?)?\d{10})|(?:(?:\+?\d{1,3}[-\s]?)?\d{3}[-\s]\d{3}[-\s]\d{4})'
+    phone_match = re.search(phone_pattern, raw_text)
+    phone = phone_match.group(0).strip() if phone_match else "Not Found"
 
     def email_cross_check(candidate: str) -> bool:
         if not email_username:
@@ -376,14 +386,38 @@ def extract_candidate_details(raw_text: str, filename: str) -> dict:
         )
 
     def try_name(candidate: str) -> Optional[str]:
-        candidate = ' '.join(candidate.split())
-        candidate = ' '.join(w.capitalize() for w in candidate.split())
-        if is_valid_name(candidate) and email_cross_check(candidate):
-            return candidate
+        candidate_stripped = ' '.join(candidate.split())
+        for prefix in ["certifications", "education", "experience", "skills", "projects", "summary"]:
+            if candidate_stripped.lower().startswith(prefix):
+                candidate_stripped = candidate_stripped[len(prefix):].strip()
+        # Check original (supports ALL CAPS)
+        if is_valid_name(candidate_stripped) and email_cross_check(candidate_stripped):
+            return candidate_stripped
+        # Fallback to Title Case
+        candidate_cap = ' '.join(w.capitalize() for w in candidate_stripped.split())
+        if is_valid_name(candidate_cap) and email_cross_check(candidate_cap):
+            return candidate_cap
         return None
 
+    # Remove all section headers before name extraction
+    section_headers = {
+        "professional summary", "work experience", "education", "certifications", 
+        "core skills", "summary", "experience", "skills", "projects", "contact", 
+        "about me", "curriculum vitae", "resume", "cv", "personal details", 
+        "core competencies", "career objective", "objective", "work history"
+    }
+
     lines = raw_text.split('\n')
-    first_30 = [l.strip() for l in lines[:30] if l.strip()]
+    cleaned_lines = []
+    for line in lines[:30]:
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+        line_clean = re.sub(r'[^a-zA-Z\s]', '', line_stripped).strip().lower()
+        if line_clean in section_headers:
+            continue
+        cleaned_lines.append(line_stripped)
+    first_30 = cleaned_lines
     name = None
 
     for line in first_30[:3]:
@@ -731,6 +765,12 @@ def extract_projects(text: str) -> List[str]:
     m = re.search(section_pat, text, re.IGNORECASE | re.DOTALL)
     section = m.group(1) if m else text
 
+    exclude_headers = {
+        "professional summary", "work experience", "education",
+        "certifications", "core skills", "summary", "experience",
+        "skills", "projects", "work history", "career highlights"
+    }
+
     # Extract lines that look like project names (Title Case, short, possibly followed by |)
     project_names = []
     for line in section.split('\n'):
@@ -742,6 +782,10 @@ def extract_projects(text: str) -> List[str]:
             content = line.lstrip('-•●*–· ').strip()
         else:
             content = line
+
+        content_clean = re.sub(r'[^a-zA-Z\s]', '', content).strip().lower()
+        if content_clean in exclude_headers:
+            continue
 
         # Project names are usually Title Case or ALL CAPS short phrases
         words = content.split()
@@ -764,6 +808,11 @@ def extract_projects(text: str) -> List[str]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_location(text: str) -> str:
+    # 1. Normalize text and insert spaces between merged words
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+    text = re.sub(r'([a-zA-Z])([0-9])', r'\1 \2', text)
+    text = re.sub(r'([0-9])([a-zA-Z])', r'\1 \2', text)
+    
     nlp = get_nlp()
     locations = [
         "Bangalore", "Bengaluru", "Mumbai", "Delhi", "Pune", "Hyderabad",
@@ -771,8 +820,10 @@ def extract_location(text: str) -> str:
         "New York", "San Francisco", "Seattle", "Austin", "Chicago",
         "London", "Singapore", "Toronto", "Remote",
     ]
+    text_lower = text.lower()
     for loc in locations:
-        if re.search(r'\b' + re.escape(loc) + r'\b', text, re.IGNORECASE):
+        # Use substring matching instead of strict word boundaries
+        if loc.lower() in text_lower:
             return loc
     if nlp:
         doc = nlp(text[:2000])
