@@ -1,0 +1,390 @@
+RECRUITER VALIDATION AUDIT REPORT
+=================================
+
+=== JOB ROLE: SITE DIRECTOR ===
+
+--- TOP 10 CANDIDATES ---
+1. Candidate Name: Srigdkk
+   Final Score: 46.23 | Verdict: Weak Match
+   Matched Skills: ['analytical skills', 'crm', 'microsoft office', 'project management']
+   Missing Skills: ['digital transformation', 'educational pedagogy', 'english language', 'google suite', 'leadership', 'management', 'problem-solving skills']
+   Experience Score: 88.60
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 57.66
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses a relevant PMP project management certification and possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+2. Candidate Name: Gopi Suresh
+   Final Score: 43.66 | Verdict: Weak Match
+   Matched Skills: ['analytical skills', 'digital transformation', 'english language', 'project management']
+   Missing Skills: ['crm', 'educational pedagogy', 'google suite', 'leadership', 'management', 'microsoft office', 'problem-solving skills']
+   Experience Score: 82.30
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 52.69
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses a relevant PMP project management certification and possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+3. Candidate Name: SHYAMLEE BHAMBORE
+   Final Score: 41.29 | Verdict: Weak Match
+   Matched Skills: ['digital transformation', 'english language', 'project management']
+   Missing Skills: ['analytical skills', 'crm', 'educational pedagogy', 'google suite', 'leadership', 'management', 'microsoft office', 'problem-solving skills']
+   Experience Score: 97.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 65.66
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses a relevant PMP project management certification and possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+4. Candidate Name: KARTHIK K R
+   Final Score: 38.46 | Verdict: Poor Match
+   Matched Skills: ['analytical skills', 'crm', 'microsoft office', 'project management']
+   Missing Skills: ['digital transformation', 'educational pedagogy', 'english language', 'google suite', 'leadership', 'management', 'problem-solving skills']
+   Experience Score: 73.90
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 62.20
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate  which aligns perfectly with the requirements of an operations director.
+
+5. Candidate Name: MOHIT KUMAR
+   Final Score: 38.19 | Verdict: Poor Match
+   Matched Skills: ['crm', 'digital transformation', 'project management']
+   Missing Skills: ['analytical skills', 'educational pedagogy', 'english language', 'google suite', 'leadership', 'management', 'microsoft office', 'problem-solving skills']
+   Experience Score: 90.70
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 58.04
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses a relevant PMP project management certification and possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+6. Candidate Name: Skiran
+   Final Score: 38.08 | Verdict: Poor Match
+   Matched Skills: ['analytical skills', 'project management']
+   Missing Skills: ['crm', 'digital transformation', 'educational pedagogy', 'english language', 'google suite', 'leadership', 'management', 'microsoft office', 'problem-solving skills']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 64.06
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses a relevant PMP project management certification and possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+7. Candidate Name: Vinodtechie
+   Final Score: 37.69 | Verdict: Poor Match
+   Matched Skills: ['crm', 'digital transformation', 'project management']
+   Missing Skills: ['analytical skills', 'educational pedagogy', 'english language', 'google suite', 'leadership', 'management', 'microsoft office', 'problem-solving skills']
+   Experience Score: 86.50
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 60.80
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses a relevant PMP project management certification and possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+8. Candidate Name: Mukul
+   Final Score: 36.52 | Verdict: Poor Match
+   Matched Skills: ['digital transformation', 'english language', 'project management']
+   Missing Skills: ['analytical skills', 'crm', 'educational pedagogy', 'google suite', 'leadership', 'management', 'microsoft office', 'problem-solving skills']
+   Experience Score: 86.50
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 54.94
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses a relevant PMP project management certification and possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+9. Candidate Name: Kumar Singh
+   Final Score: 32.31 | Verdict: Poor Match
+   Matched Skills: ['digital transformation', 'project management']
+   Missing Skills: ['analytical skills', 'crm', 'educational pedagogy', 'english language', 'google suite', 'leadership', 'management', 'microsoft office', 'problem-solving skills']
+   Experience Score: 99.10
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 61.33
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+10. Candidate Name: JAYASHREE SWARNAKAR
+   Final Score: 32.11 | Verdict: Poor Match
+   Matched Skills: ['english language', 'problem-solving skills', 'project management']
+   Missing Skills: ['analytical skills', 'crm', 'digital transformation', 'educational pedagogy', 'google suite', 'leadership', 'management', 'microsoft office']
+   Experience Score: 94.90
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 47.36
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses strong tenure and experience history which aligns perfectly with the requirements of an operations director.
+
+
+--- BOTTOM 10 CANDIDATES ---
+1. Candidate Name: ADITYA AGRAWAL (Final Score: 18.93 | Verdict: Not Suitable)
+2. Candidate Name: ARUN KUMAR MOKIRE (Final Score: 18.11 | Verdict: Not Suitable)
+3. Candidate Name: M ONICA (Final Score: 17.70 | Verdict: Not Suitable)
+4. Candidate Name: Devesh Upadhyay (Final Score: 17.27 | Verdict: Not Suitable)
+5. Candidate Name: Mvbharatvikram (Final Score: 13.59 | Verdict: Not Suitable)
+6. Candidate Name: MANAS KUMAR (Final Score: 12.13 | Verdict: Not Suitable)
+7. Candidate Name: Blackboard Learn (Final Score: 7.36 | Verdict: Not Suitable)
+8. Candidate Name: GOVARDHAN GIRISH SP (Final Score: 5.30 | Verdict: Not Suitable)
+9. Candidate Name: Rhodali (Final Score: 0.34 | Verdict: Not Suitable)
+10. Candidate Name: KIRAN SINGH (Final Score: 0.00 | Verdict: Not Suitable)
+
+
+==================================================
+
+=== JOB ROLE: DATA ANALYST ===
+
+--- TOP 10 CANDIDATES ---
+1. Candidate Name: Sandhu Madhavi
+   Final Score: 61.02 | Verdict: Moderate Match
+   Matched Skills: ['data analysis', 'postgresql', 'python', 'tableau']
+   Missing Skills: ['excel', 'power bi']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 61.78
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like python, tableau and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+2. Candidate Name: HARSHIT SHARMA
+   Final Score: 60.69 | Verdict: Moderate Match
+   Matched Skills: ['excel', 'power bi', 'python']
+   Missing Skills: ['data analysis', 'postgresql', 'tableau']
+   Experience Score: 100.00
+   Project Score: 100.00
+   Certification Score: 0.00
+   Semantic Score: 43.46
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like excel, python and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+3. Candidate Name: Srigdkk
+   Final Score: 58.16 | Verdict: Weak Match
+   Matched Skills: ['power bi', 'python', 'tableau']
+   Missing Skills: ['data analysis', 'excel', 'postgresql']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 55.80
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like python, tableau and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+4. Candidate Name: Skiran
+   Final Score: 55.51 | Verdict: Weak Match
+   Matched Skills: ['data analysis', 'excel', 'power bi']
+   Missing Skills: ['postgresql', 'python', 'tableau']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 42.55
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like excel and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+5. Candidate Name: SHYAMLEE BHAMBORE
+   Final Score: 49.88 | Verdict: Weak Match
+   Matched Skills: ['excel', 'python']
+   Missing Skills: ['data analysis', 'postgresql', 'power bi', 'tableau']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 67.74
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like excel, python and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+6. Candidate Name: Mvbharatvikram
+   Final Score: 47.39 | Verdict: Weak Match
+   Matched Skills: ['excel', 'postgresql', 'power bi']
+   Missing Skills: ['data analysis', 'python', 'tableau']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 26.95
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like excel and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+7. Candidate Name: KARTHIK K R
+   Final Score: 43.05 | Verdict: Weak Match
+   Matched Skills: ['excel', 'power bi']
+   Missing Skills: ['data analysis', 'postgresql', 'python', 'tableau']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 58.58
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like excel and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+8. Candidate Name: Gopi Suresh
+   Final Score: 41.55 | Verdict: Weak Match
+   Matched Skills: ['excel', 'power bi']
+   Missing Skills: ['data analysis', 'postgresql', 'python', 'tableau']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 26.07
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like excel and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+9. Candidate Name: Mukul
+   Final Score: 39.58 | Verdict: Poor Match
+   Matched Skills: ['python']
+   Missing Skills: ['data analysis', 'excel', 'postgresql', 'power bi', 'tableau']
+   Experience Score: 100.00
+   Project Score: 100.00
+   Certification Score: 100.00
+   Semantic Score: 24.58
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate possesses core data analytical tools like python and has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+10. Candidate Name: Suman Bachu
+   Final Score: 38.81 | Verdict: Poor Match
+   Matched Skills: ['data analysis', 'postgresql']
+   Missing Skills: ['excel', 'power bi', 'python', 'tableau']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 37.41
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has relevant numerical/analytical background experience which matches the day-to-day visualization and query duties of a Data Analyst.
+
+
+--- BOTTOM 10 CANDIDATES ---
+1. Candidate Name: ANEESH ATREYA (Final Score: 16.43 | Verdict: Not Suitable)
+2. Candidate Name: Shshnirkhey (Final Score: 15.82 | Verdict: Not Suitable)
+3. Candidate Name: JAYASHREE SWARNAKAR (Final Score: 15.39 | Verdict: Not Suitable)
+4. Candidate Name: ARUN KUMAR MOKIRE (Final Score: 15.12 | Verdict: Not Suitable)
+5. Candidate Name: ADITYA AGRAWAL (Final Score: 14.67 | Verdict: Not Suitable)
+6. Candidate Name: Vineeth Venkatesh (Final Score: 14.13 | Verdict: Not Suitable)
+7. Candidate Name: GOVARDHAN GIRISH SP (Final Score: 13.00 | Verdict: Not Suitable)
+8. Candidate Name: Blackboard Learn (Final Score: 12.56 | Verdict: Not Suitable)
+9. Candidate Name: Rhodali (Final Score: 0.79 | Verdict: Not Suitable)
+10. Candidate Name: KIRAN SINGH (Final Score: 0.00 | Verdict: Not Suitable)
+
+
+==================================================
+
+=== JOB ROLE: AI/ML ENGINEER ===
+
+--- TOP 10 CANDIDATES ---
+1. Candidate Name: Vinodtechie
+   Final Score: 50.54 | Verdict: Weak Match
+   Matched Skills: ['amazon web services', 'machine learning', 'pytorch', 'tensorflow']
+   Missing Skills: ['computer vision', 'deep learning', 'natural language processing', 'postgresql', 'python']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 48.80
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning, pytorch, tensorflow and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+2. Candidate Name: Srigdkk
+   Final Score: 43.89 | Verdict: Weak Match
+   Matched Skills: ['amazon web services', 'machine learning', 'python']
+   Missing Skills: ['computer vision', 'deep learning', 'natural language processing', 'postgresql', 'pytorch', 'tensorflow']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 37.79
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning, python and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+3. Candidate Name: M ONICA
+   Final Score: 41.64 | Verdict: Weak Match
+   Matched Skills: ['machine learning', 'postgresql', 'python']
+   Missing Skills: ['amazon web services', 'computer vision', 'deep learning', 'natural language processing', 'pytorch', 'tensorflow']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 51.52
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning, python and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+4. Candidate Name: Mukul
+   Final Score: 41.01 | Verdict: Weak Match
+   Matched Skills: ['machine learning', 'python']
+   Missing Skills: ['amazon web services', 'computer vision', 'deep learning', 'natural language processing', 'postgresql', 'pytorch', 'tensorflow']
+   Experience Score: 100.00
+   Project Score: 100.00
+   Certification Score: 100.00
+   Semantic Score: 20.63
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning, python and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+5. Candidate Name: SHYAMLEE BHAMBORE
+   Final Score: 39.25 | Verdict: Poor Match
+   Matched Skills: ['machine learning', 'python']
+   Missing Skills: ['amazon web services', 'computer vision', 'deep learning', 'natural language processing', 'postgresql', 'pytorch', 'tensorflow']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 100.00
+   Semantic Score: 61.81
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning, python and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+6. Candidate Name: Sandhu Madhavi
+   Final Score: 37.37 | Verdict: Poor Match
+   Matched Skills: ['machine learning', 'postgresql', 'python']
+   Missing Skills: ['amazon web services', 'computer vision', 'deep learning', 'natural language processing', 'pytorch', 'tensorflow']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 30.20
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning, python and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+7. Candidate Name: VENUGOPAL KRISHNAPPA
+   Final Score: 34.03 | Verdict: Poor Match
+   Matched Skills: ['amazon web services', 'machine learning', 'python']
+   Missing Skills: ['computer vision', 'deep learning', 'natural language processing', 'postgresql', 'pytorch', 'tensorflow']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 13.47
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning, python and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+8. Candidate Name: Blackboard Learn
+   Final Score: 28.29 | Verdict: Poor Match
+   Matched Skills: ['amazon web services', 'machine learning', 'python']
+   Missing Skills: ['computer vision', 'deep learning', 'natural language processing', 'postgresql', 'pytorch', 'tensorflow']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 59.80
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning, python and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+9. Candidate Name: HARSHIT SHARMA
+   Final Score: 27.25 | Verdict: Poor Match
+   Matched Skills: ['python']
+   Missing Skills: ['amazon web services', 'computer vision', 'deep learning', 'machine learning', 'natural language processing', 'postgresql', 'pytorch', 'tensorflow']
+   Experience Score: 93.50
+   Project Score: 100.00
+   Certification Score: 0.00
+   Semantic Score: 22.17
+   Would a human recruiter reasonably place this candidate in the Top 10? NO
+   Explanation: Candidate lacks machine learning or deep learning experience in their profile, making them unsuitable for an specialized ML role.
+
+10. Candidate Name: Suman Bachu
+   Final Score: 26.76 | Verdict: Poor Match
+   Matched Skills: ['machine learning', 'postgresql']
+   Missing Skills: ['amazon web services', 'computer vision', 'deep learning', 'natural language processing', 'python', 'pytorch', 'tensorflow']
+   Experience Score: 100.00
+   Project Score: 0.00
+   Certification Score: 0.00
+   Semantic Score: 24.38
+   Would a human recruiter reasonably place this candidate in the Top 10? YES
+   Explanation: The candidate has experience with modeling libraries/frameworks like machine learning and demonstrates solid engineering experience which are critical for training, deploying, and optimizing ML models in production.
+
+
+--- BOTTOM 10 CANDIDATES ---
+1. Candidate Name: ARUN KUMAR MOKIRE (Final Score: 12.09 | Verdict: Not Suitable)
+2. Candidate Name: ANEESH ATREYA (Final Score: 11.10 | Verdict: Not Suitable)
+3. Candidate Name: ADITYA AGRAWAL (Final Score: 11.10 | Verdict: Not Suitable)
+4. Candidate Name: ROHIT SRIVASTAVA (Final Score: 10.00 | Verdict: Not Suitable)
+5. Candidate Name: Vineeth Venkatesh (Final Score: 9.66 | Verdict: Not Suitable)
+6. Candidate Name: MANAS KUMAR (Final Score: 9.03 | Verdict: Not Suitable)
+7. Candidate Name: Devesh Upadhyay (Final Score: 8.35 | Verdict: Not Suitable)
+8. Candidate Name: GOVARDHAN GIRISH SP (Final Score: 1.94 | Verdict: Not Suitable)
+9. Candidate Name: KIRAN SINGH (Final Score: 0.00 | Verdict: Not Suitable)
+10. Candidate Name: Rhodali (Final Score: 0.00 | Verdict: Not Suitable)
+
+
+==================================================
+

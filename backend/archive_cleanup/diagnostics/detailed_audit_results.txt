@@ -1,0 +1,281 @@
+==================================================
+DETAILED VERIFICATION & AUDIT AUDIT REPORT
+==================================================
+
+=== PHASE 1: BACKEND VERIFICATION ===
+Backend /health status: 200
+Backend /health response: {'status': 'ok', 'database': {'status': 'connected', 'database': 'ats_platform', 'last_error': None, 'retry_count': 0, 'uri_type': 'srv', 'masked_uri': 'mongodb+srv://****:****@cluster0.zl6ytc1.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0'}, 'vector_store': {'ready': False, 'resumes': 0, 'faiss_installed': False, 'sync_status': {'status': 'completed', 'processed': 41, 'total': 41, 'started_at': '2026-06-02T06:08:12.537623', 'completed_at': '2026-06-02T06:08:12.686861', 'error': None}}, 'scheduler': 'running'}
+MongoDB Ping: {'ok': 1}
+MongoDB Connection: ACTIVE
+Auth login (/auth/login) status: 200
+Auth Token Acquired: True
+Database candidates count: 39
+Database jobs count: 1
+
+=== PHASE 2: RANKING AUDIT (5 CANDIDATES) ===
+Target Job: Site Director at Posspole
+Job Required Skills: ['management', 'digital transformation', 'project management', 'educational pedagogy', 'laws and regulations', 'leadership', 'analytical skills', 'problem-solving skills', 'microsoft office', 'google suite', 'crm', 'english language']
+Job Required Experience: 5.0 years
+Auditing 5 candidates against this job description...
+
+Candidate #1: KARTHIK K R
+  ID: 6a17c265e425aee1d6e022ae
+  Filename: 1777011733955.pdf
+  Extracted Skills (DB): ['hubspot crm', 'zoominfo', 'linkedin sales navigator', 'power bi', 'microsoft excel', 'business intelligence', 'kpi reporting', 'microsoft office suite']
+  Extracted Experience (DB): 9.5 years
+  Extracted Projects (DB): ['KARTHIK K R', 'PROFESSIONAL SUMMARY', 'CORE COMPETENCIES', 'WORK EXPERIENCE', 'Senior Manager', 'Business Analyst', 'Senior Financial Analyst', 'EDUCATION']
+  Extracted Certifications (DB): []
+  Semantic Similarity Score (DB): 35.77
+  Final Weighted Score (DB): 60.84
+  Score Component Breakdown: {'skill_score': 60.0, 'experience_score': 73.9, 'semantic_score': 35.77, 'project_score': 70.0, 'cert_score': 40.0, 'quality_score': 80.0, 'penalties': ['missing email (-20)'], 'final_score': 60.84}
+  Recruiter Explanation: Matched 0 of 0 required skills. Experience: 6.3yrs (req 5.0yrs). Penalties: missing email (-20).
+  Mathematical Proof:
+    Skills Match Contribution (40%): 60.0 * 0.40 = 24.00
+    Experience Match Contribution (25%): 73.9 * 0.25 = 18.48
+    Semantic Cosine Similarity Contribution (15%): 35.77 * 0.15 = 5.37
+    Projects Contribution (10%): 70.0 * 0.10 = 7.00
+    Certifications Contribution (5%): 40.0 * 0.05 = 2.00
+    Resume Quality Contribution (5%): 80.0 * 0.05 = 4.00
+    Raw Weighted Sum: 60.84
+    Global Penalties logged: ['missing email (-20)']
+    Stored final_score: 60.84
+
+Candidate #2: Vinod Megen
+  ID: 6a17c26ae425aee1d6e022af
+  Filename: 1777011842084.pdf
+  Extracted Skills (DB): ['sap s/4hana', 'oracle netsuite', 'microsoft dynamics 365', 'salesforce crm', 'jira', 'servicenow', 'microsoft project', 'asana', 'trello', 'aws', 'azure', 'gcp', 'tensorflow', 'pytorch', 'lean/six sigma', 'bpmn', 'agile', 'safe scrum', 'scrum']
+  Extracted Experience (DB): 15.0 years
+  Extracted Projects (DB): []
+  Extracted Certifications (DB): ['project management professional (pmp)', 'program management professional (pgmp)', 'safe 6 scrum master', 'certified scrummaster (csm)', 'pmi agile certified practitioner (pmi-acp)', 'certified information systems security professional (cissp)', 'six sigma green belt', 'itil v3.0 certified', 'governance, risk management and compliance professional (grcp)']
+  Semantic Similarity Score (DB): 35.28
+  Final Weighted Score (DB): 60.17
+  Score Component Breakdown: {'skill_score': 60.0, 'experience_score': 86.5, 'semantic_score': 35.28, 'project_score': 20.0, 'cert_score': 65.0, 'quality_score': 80.0, 'penalties': ['missing email (-20)'], 'final_score': 60.17}
+  Recruiter Explanation: Matched 0 of 0 required skills. Experience: 10.5yrs (req 5.0yrs). Penalties: missing email (-20).
+  Mathematical Proof:
+    Skills Match Contribution (40%): 60.0 * 0.40 = 24.00
+    Experience Match Contribution (25%): 86.5 * 0.25 = 21.62
+    Semantic Cosine Similarity Contribution (15%): 35.28 * 0.15 = 5.29
+    Projects Contribution (10%): 20.0 * 0.10 = 2.00
+    Certifications Contribution (5%): 65.0 * 0.05 = 3.25
+    Resume Quality Contribution (5%): 80.0 * 0.05 = 4.00
+    Raw Weighted Sum: 60.17
+    Global Penalties logged: ['missing email (-20)']
+    Stored final_score: 60.17
+
+Candidate #3: Amit Kumar Singh
+  ID: 6a17c271e425aee1d6e022b0
+  Filename: 1777012028577.pdf
+  Extracted Skills (DB): ['artificial intelligence', 'cyber security', 'internet of things', 'cloud', 'saas', 'agile', 'scrum', 'kanban', 'jira', 'versionone']
+  Extracted Experience (DB): 21.0 years
+  Extracted Projects (DB): ['automatic train supervision', 'iot application software for hardware in loop', 'mems group product', 'electronics and communication group product']
+  Extracted Certifications (DB): ['scrum certified', 'pep']
+  Semantic Similarity Score (DB): 35.47
+  Final Weighted Score (DB): 68.35
+  Score Component Breakdown: {'skill_score': 60.0, 'experience_score': 99.1, 'semantic_score': 35.47, 'project_score': 70.0, 'cert_score': 65.0, 'quality_score': 80.0, 'penalties': ['missing email (-20)'], 'final_score': 68.35}
+  Recruiter Explanation: Matched 0 of 0 required skills. Experience: 14.7yrs (req 5.0yrs). Penalties: missing email (-20).
+  Mathematical Proof:
+    Skills Match Contribution (40%): 60.0 * 0.40 = 24.00
+    Experience Match Contribution (25%): 99.1 * 0.25 = 24.77
+    Semantic Cosine Similarity Contribution (15%): 35.47 * 0.15 = 5.32
+    Projects Contribution (10%): 70.0 * 0.10 = 7.00
+    Certifications Contribution (5%): 65.0 * 0.05 = 3.25
+    Resume Quality Contribution (5%): 80.0 * 0.05 = 4.00
+    Raw Weighted Sum: 68.35
+    Global Penalties logged: ['missing email (-20)']
+    Stored final_score: 68.35
+
+Candidate #4: BARATH VIKRAM M V
+  ID: 6a17c274e425aee1d6e022b1
+  Filename: 1777013507031.pdf
+  Extracted Skills (DB): ['sql', 'power bi', 'advanced excel', 'ms office suite']
+  Extracted Experience (DB): 10.0 years
+  Extracted Projects (DB): ['BARATH VIKRAM M V', 'Operations Manager', 'Bangalore, India  |  mvbharatvikram@gmail.com  |  +91 9901430447', 'Associate Operations Manager', 'Staff Analyst', 'E2open, Bangalore   |  Mar 2024 – Jul 2024', 'Senior Analyst', 'E2open, Bangalore   |  Sep 2021 – Feb 2024']
+  Extracted Certifications (DB): ['Business Analytics using Power BI']
+  Semantic Similarity Score (DB): 23.44
+  Final Weighted Score (DB): 64.97
+  Score Component Breakdown: {'skill_score': 60.0, 'experience_score': 92.8, 'semantic_score': 23.44, 'project_score': 70.0, 'cert_score': 65.0, 'quality_score': 80.0, 'penalties': ['missing email (-20)'], 'final_score': 64.97}
+  Recruiter Explanation: Matched 0 of 0 required skills. Experience: 12.6yrs (req 5.0yrs). Penalties: missing email (-20).
+  Mathematical Proof:
+    Skills Match Contribution (40%): 60.0 * 0.40 = 24.00
+    Experience Match Contribution (25%): 92.8 * 0.25 = 23.20
+    Semantic Cosine Similarity Contribution (15%): 23.44 * 0.15 = 3.52
+    Projects Contribution (10%): 70.0 * 0.10 = 7.00
+    Certifications Contribution (5%): 65.0 * 0.05 = 3.25
+    Resume Quality Contribution (5%): 80.0 * 0.05 = 4.00
+    Raw Weighted Sum: 64.97
+    Global Penalties logged: ['missing email (-20)']
+    Stored final_score: 64.97
+
+Candidate #5: MANAS KUMAR
+  ID: 6a17c276e425aee1d6e022b2
+  Filename: 1777014563394.pdf
+  Extracted Skills (DB): ['salesforce', 'reporting', 'data insights', 'excel']
+  Extracted Experience (DB): 10.0 years
+  Extracted Projects (DB): ['MANAS KUMAR', 'PROFESSIONAL SUMMARY', 'CORE SKILLS', 'PROFESSIONAL EXPERIENCE', 'OPERATIONAL LEADERSHIP CAPABILITIES', 'EDUCATION', 'CERTIFICATIONS']
+  Extracted Certifications (DB): ['Six Sigma Green Belt', 'Advanced Excel']
+  Semantic Similarity Score (DB): 28.23
+  Final Weighted Score (DB): 52.23
+  Score Component Breakdown: {'skill_score': 40.0, 'experience_score': 76.0, 'semantic_score': 28.23, 'project_score': 70.0, 'cert_score': 40.0, 'quality_score': 80.0, 'penalties': ['missing email (-20)'], 'final_score': 52.23}
+  Recruiter Explanation: Matched 0 of 0 required skills. Experience: 7.0yrs (req 5.0yrs). Penalties: missing email (-20). Missing required skills: excel.
+  Mathematical Proof:
+    Skills Match Contribution (40%): 40.0 * 0.40 = 16.00
+    Experience Match Contribution (25%): 76.0 * 0.25 = 19.00
+    Semantic Cosine Similarity Contribution (15%): 28.23 * 0.15 = 4.23
+    Projects Contribution (10%): 70.0 * 0.10 = 7.00
+    Certifications Contribution (5%): 40.0 * 0.05 = 2.00
+    Resume Quality Contribution (5%): 80.0 * 0.05 = 4.00
+    Raw Weighted Sum: 52.23
+    Global Penalties logged: ['missing email (-20)']
+    Stored final_score: 52.23
+
+=== PHASE 3: EXTRACTION AUDIT (10 RESUMES) ===
+
+Resume #1: 1777011733955.pdf
+  File path: D:\Job_resume_ranker-main\uploads\5a1ae160_1777011733955.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: KARTHIK K R
+    Line 2: Bengaluru, KA 560057  |  +91 90354 89733  |  karthik.kr.hsn@gmail.com  |  LinkedIn Profile
+    Line 3: PROFESSIONAL SUMMARY
+    Line 4: Start up operator with 9+ years building and scaling business operations in fast -growing SaaS companies. Trusted
+    Line 5: partner to founders and C -suite executives, with hands -on ownership of 0 -to-1 setup of India operations, analytics
+  [NAME]     Actual: KARTHIK K R                    | Extracted (DB): KARTHIK K R
+  [EMAIL]    Actual: karthik.kr.hsn@gmail.com       | Extracted (DB): karthik.kr.hsn@gmail.com
+  [PHONE]    Actual: +91 90354 89733                | Extracted (DB): Not Found
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: PASSED
+
+Resume #2: 1777011842084.pdf
+  File path: D:\Job_resume_ranker-main\uploads\d257702b_1777011842084.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: ..
+    Line 2: +91 9071672149      vinodtechie786@gmail.com     Bangalore, Karnataka 560041     https://www.linkedin.com/in/vinodmegen     Indian PROFESSIONAL SUMMARY   Professional Summary PMP-certified IT leader with over 15+ years of experience driving $5M+ SaaS, ERP, and technology portfolios,  insurance technology platforms. achieving 97% on-time delivery, 30% process efficiency gains, and 90% customer satisfaction (CSAT). Expert in SAP S/4HANA, Oracle NetSuite, Microsoft Dynamics 365, and Salesforce CRM, with proficiency in Lean/Six Sigma, SAFe Scrum, BPMN, and tools like Jira, ServiceNow, Microsoft Project, Asana, and Trello. Skilled in operational transformation, process optimization, stakeholder management, and change management, delivering scalable, secure solutions aligned with business goals. Proficient in Agile (Scrum, SAFe, Kanban), PMO governance, ServiceNow, and AWS, mentoring high-performing teams to deliver scalable, secure solutions. Software Delivery & Leadership  Spearheaded multi-stream software development initiatives across ERP and SaaS platforms, optimizing resource allocation for parallel Agile sprints  Directed full-cycle product deliveryfrom requirements analysis to deployment  VINOD MEGA   PhD ( Cybersecurity) | CISO | Digital Transformation & ERP (SAP, Oracle, Dynamics 365) | Delivery Excellence | Information Security | AI/ML | PMP, CISSP, PgMP | AI Project / Program Management | Agile Practitioner & Coach | SAFe Scrum Professional
+    Line 3: Core Competencies   Strategic Planning: Developed IT roadmaps for global enterprises, aligning business and technology goals with OKR-driven frameworks.  Project & Program Management: PMP, PgMP, SAFe Scrum, Agile, Lean/Six Sigma, Jira, ServiceNow, Microsoft Project, Asana, Trello &  insurance technology platforms  Budgeting & Financial Management: Managed multi-million-dollar IT budgets, optimizing costs by 25%.  AI & ML: Predictive analytics, TensorFlow, PyTorch, AI-driven automation  Delivery Excellence: Achieved 95% on-time delivery, 90% client satisfaction, and 20% cost savings through Agile methodologies and optimized ERP/CRM/HRIS deployments  Vendor & Partner Management: Negotiated contracts for ERP and cloud services, optimizing costs by 20%.  Process Optimization: BPMN, Lean/Six Sigma, cycle time, process yield, CSAT, value stream mapping.    Experienced Agile Coach: Partnered with senior leadership to design agile operating models, coached multiple teams and leaders, and led enterprise-wide agile transformation initiatives.  Generative AI & Machine Learning: AI-Driven Automation, ML Model Deployment (TensorFlow, PyTorch), Predictive Analytics  IT Infrastructure: Cloud Infrastructure (AWS, Azure, GCP), Server Optimization,  ServiceNow (ITSM, ITOM, HRSD).  ERP & CRM Systems: SAP S/4HANA, Oracle NetSuite, Microsoft Dynamics 365, SAP SuccessFactors, Salesforce (Sales Cloud, Service Cloud, Apex, Visualforce, Lightning Components), Salesforce Integration (MuleSoft, APIs), Greytip HR, University ERP etc  SAP Project Management | SAP S/4HANA | SAP Activate | SAP BTP | Fit-to-Standard | Blueprinting | Configuration  Cloud Security: AWS Guard Duty, Azure Sentinel, Secure CI/CD, IAM, Key Vault (99.9% uptime)  Stakeholder Engagement: Investor Relations ($7M funding), Executive Reporting, Cross-Functional Collaboration  Leadership: Mentored 50-100+ global engineers, drove OKR implementation, and fostered innovation with  Change Management  Governance, Risk & Compliance: Ensured adherence to global IT policies, SOX, NIS2, DORA, NIST CSF, MITRE ATT&CK, ISO 27001, ISO 42001,USFDA, HIPAA, GDPRSOX, NIST CSF,  IRDAI insurance compliance, CDSCO reducing vulnerabilities by 85%.
+    Line 4: .. across global teams, achieving 20% reduction in rollout delays  Collaborated with cross-functional stakeholders to align sprint outcomes with client onboarding milestones in healthcare, HR tech domains, Retail, Manufacturing, IT services & Product development. AI & Innovation  Pursuing PhD at UCLA focusing on AI-driven threat intelligence and compliance automation, bridging cybersecurity with emerging technologies  Contributed to GenAI and machine learning research pipelines; actively evaluating reinforcement learning and vision AI for real-world governance use cases Technical Project Execution  Managed vulnerability response and CI/CD flows across hybrid environments including AWS and Azure; ensured audit readiness and ISO/SOC2 alignment  Led API-first integration using REST/JSON and secure data exchanges across Java-powered ERP and SaaS modules Key Achievements:
+    Line 5:  97% on-time project delivery across 30+ global projects (USA, India, Singapore, Europe)
+  [NAME]     Actual: ..                             | Extracted (DB): Vinod Megen
+  [EMAIL]    Actual: vinodtechie786@gmail.com       | Extracted (DB): vinodtechie786@gmail.com
+  [PHONE]    Actual: +91 9071672149                 | Extracted (DB): +91 9071672149
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: FAILED (NAME MISMATCH)
+
+Resume #3: 1777012028577.pdf
+  File path: D:\Job_resume_ranker-main\uploads\4c52d173_1777012028577.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: Amit Kumar Singh                                                                                                                                                  Hellosingh001@gmail.com
+    Line 2: +91-990-141-7755
+    Line 3: Objective:
+    Line 4: ----------------------------------------------------------------------------------------------------------------------------- -----------------
+    Line 5: Obtain a challenging leadership position and utilize my experiences in the  end to end product deliv ery, product roadmap
+  [NAME]     Actual: +91-990-141-7755               | Extracted (DB): Amit Kumar Singh
+  [EMAIL]    Actual: Hellosingh001@gmail.com        | Extracted (DB): Hellosingh001@gmail.com
+  [PHONE]    Actual: +91-990-141-7755               | Extracted (DB): +91-9901417755
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: FAILED (NAME MISMATCH)
+
+Resume #4: 1777013507031.pdf
+  File path: D:\Job_resume_ranker-main\uploads\f03754e9_1777013507031.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: BARATH VIKRAM M V
+    Line 2: Operations Manager
+    Line 3: 10+ Years  |  Supply Chain & Data Operations  |  Process Automation  |  Power BI
+    Line 4: Bangalore, India  |  mvbharatvikram@gmail.com  |  +91 9901430447
+    Line 5: P R O F E S S I O N A L  S U M M A R Y
+  [NAME]     Actual: BARATH VIKRAM M V              | Extracted (DB): BARATH VIKRAM M V
+  [EMAIL]    Actual: mvbharatvikram@gmail.com       | Extracted (DB): mvbharatvikram@gmail.com
+  [PHONE]    Actual: +91 9901430447                 | Extracted (DB): +91 9901430447
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: PASSED
+
+Resume #5: 1777014563394.pdf
+  File path: D:\Job_resume_ranker-main\uploads\fbe9b447_1777014563394.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: MANAS KUMAR
+    Line 2: +91-7676691989 | manaskumar15nov@gmail.com | linkedin.com/in/manas-kumar-b13357b8
+    Line 3: PROFESSIONAL SUMMARY
+    Line 4: Operations and Customer Experience Leader with 10+ years of experience across EdTech and service
+    Line 5: operations. Expert in operations management, customer experience, retention strategy, and team
+  [NAME]     Actual: MANAS KUMAR                    | Extracted (DB): MANAS KUMAR
+  [EMAIL]    Actual: manaskumar15nov@gmail.com      | Extracted (DB): manaskumar15nov@gmail.com
+  [PHONE]    Actual: +91-7676691989                 | Extracted (DB): +91-7676691989
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: PASSED
+
+Resume #6: 1777014847006.pdf
+  File path: D:\Job_resume_ranker-main\uploads\ce73815e_1777014847006.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: ARUN  KUMAR  MOKIRE
+    Line 2: Bengaluru   9900004144
+    Line 3: arunmokire@gmail.com   www.linkedin.com/in/arunkumarmokire
+    Line 4: SUMMARY  Business & Operations Leader with a strong focus on operational excellence, service delivery,
+    Line 5: and post -sales management in the education sector. Successfully led multi -crore operations,
+  [NAME]     Actual: ARUN  KUMAR  MOKIRE            | Extracted (DB): ARUN KUMAR MOKIRE
+  [EMAIL]    Actual: arunmokire@gmail.com           | Extracted (DB): arunmokire@gmail.com
+  [PHONE]    Actual: 9900004144                     | Extracted (DB): 9900004144
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: PASSED
+
+Resume #7: 1777014942339.pdf
+  File path: D:\Job_resume_ranker-main\uploads\79cd4234_1777014942339.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: ASHISH NIRKHEY  +91 8096681321
+    Line 2: shshnirkhey@gmail.com
+    Line 3: https://www.linkedin.com/in/ashish -nirkhey -749ab872/
+    Line 4: Personal Profile  Profile Summary
+    Line 5: IT Infrastructure Team Manager
+  [NAME]     Actual: shshnirkhey@gmail.com          | Extracted (DB): Ashish Nirkhey
+  [EMAIL]    Actual: shshnirkhey@gmail.com          | Extracted (DB): shshnirkhey@gmail.com
+  [PHONE]    Actual: +91 8096681321                 | Extracted (DB): +91 8096681321
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: FAILED (NAME MISMATCH)
+
+Resume #8: 1777015497380.pdf
+  File path: D:\Job_resume_ranker-main\uploads\3dca85f4_1777015497380.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: ANEESH ATREYA
+    Line 2: PROFESSIONAL SUMMARY
+    Line 3: Senior Consulting and Pre-Sales leader with 16 years of experience across BFSI, Retail, and
+    Line 4: Government engagements within IT services and consulting organizations.
+    Line 5: Led pre-sales, solutioning, and implementation for large, regulated environments.
+  [NAME]     Actual: ANEESH ATREYA                  | Extracted (DB): Aneesh Atreya
+  [EMAIL]    Actual: saneeshatreyaa@gmail.com       | Extracted (DB): saneeshatreyaa@gmail.com
+  [PHONE]    Actual: +91-8095754166                 | Extracted (DB): +91-8095754166
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: PASSED
+
+Resume #9: 1777015839679.pdf
+  File path: D:\Job_resume_ranker-main\uploads\3a0b38e5_1777015839679.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: Bangalore, India 560061
+    Line 2: +91 6364927755
+    Line 3: neha.deeksha345@gmail.com
+    Line 4: https://www.linkedin.com/in/deeksha-
+    Line 5: mishra-131057a0/
+  [NAME]     Actual: Bangalore, India 560061        | Extracted (DB): Deeksha Mishra
+  [EMAIL]    Actual: neha.deeksha345@gmail.com      | Extracted (DB): neha.deeksha345@gmail.com
+  [PHONE]    Actual: +91 6364927755                 | Extracted (DB): +91 6364927755
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: FAILED (NAME MISMATCH)
+
+Resume #10: 1777015980335.pdf
+  File path: D:\Job_resume_ranker-main\uploads\0d9df772_1777015980335.pdf
+  File exists on disk: True
+  First 5 lines of PDF text:
+    Line 1: JASNEET KAUR
+    Line 2: Product Manager  EdTech | Agile Product Management | UX & Data -Driven Strategy
+    Line 3: India       jasneet766@gmail.com     +91-9725500906       LinkedIn: Jasneet  Kaur |  LinkedIn
+    Line 4: PROFESSIONAL SUMMARY : Strategic and customer -centered Product Manager with 15+ years of experience
+    Line 5: driving digital learning transformation across K 12 platforms. Skilled in Agile product leadership, UX
+  [NAME]     Actual: JASNEET KAUR                   | Extracted (DB): Jasneet Kaur
+  [EMAIL]    Actual: jasneet766@gmail.com           | Extracted (DB): jasneet766@gmail.com
+  [PHONE]    Actual: +91-9725500906                 | Extracted (DB): +91-9725500906
+  [LOCATION] Actual: Bangalore                      | Extracted (DB): Bangalore
+  --> EXTRACTION STATUS: PASSED

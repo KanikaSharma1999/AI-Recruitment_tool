@@ -1,0 +1,52 @@
+# Projects & Certifications Fallback Fix Comparison Report
+
+## 1. Projects Score Comparison (Before vs After Fallback Fix)
+
+| Candidate | Project Count | Project Score (Before) | Project Score (After) |
+|---|---|---|---|
+| Srigdkk | 0 | 0.00 | 0.00 |
+| Gopi Suresh | 8 | 0.00 | 0.00 |
+| SHYAMLEE BHAMBORE | 8 | 0.00 | 0.00 |
+| MOHIT KUMAR | 1 | 0.00 | 0.00 |
+| Skiran | 8 | 0.00 | 0.00 |
+| Vinodtechie | 0 | 0.00 | 0.00 |
+| Mukul | 8 | 0.00 | 0.00 |
+| Kumar Singh | 4 | 0.00 | 0.00 |
+| JAYASHREE SWARNAKAR | 1 | 0.00 | 0.00 |
+| ARCHANA DEVATE JOSHI | 8 | 0.00 | 0.00 |
+| SUDHAKAR S | 0 | 0.00 | 0.00 |
+| Prasamit Kalita | 8 | 0.00 | 0.00 |
+| VENUGOPAL KRISHNAPPA | 8 | 0.00 | 0.00 |
+| Suman Bachu | 5 | 0.00 | 0.00 |
+| HARSHIT SHARMA | 8 | 0.00 | 0.00 |
+| ANEESH ATREYA | 8 | 0.00 | 0.00 |
+| Babu Rao Talwar | 0 | 0.00 | 0.00 |
+| Vineeth Venkatesh | 8 | 0.00 | 0.00 |
+| Shshnirkhey | 8 | 0.00 | 0.00 |
+| Hemachandra | 3 | 0.00 | 0.00 |
+
+
+## 2. Certifications Score Comparison (Before vs After Fallback Fix)
+
+| Candidate | Certification Count | Certification Score (Before) | Certification Score (After) |
+|---|---|---|---|
+| Srigdkk | 2 | 0.00 | 100.00 |
+| Gopi Suresh | 4 | 0.00 | 100.00 |
+| SHYAMLEE BHAMBORE | 3 | 0.00 | 100.00 |
+| MOHIT KUMAR | 2 | 0.00 | 100.00 |
+| Skiran | 3 | 0.00 | 100.00 |
+| Vinodtechie | 9 | 0.00 | 100.00 |
+| Mukul | 4 | 0.00 | 100.00 |
+| Kumar Singh | 2 | 0.00 | 0.00 |
+| JAYASHREE SWARNAKAR | 1 | 0.00 | 0.00 |
+| ARCHANA DEVATE JOSHI | 0 | 0.00 | 0.00 |
+| SUDHAKAR S | 1 | 0.00 | 0.00 |
+| Prasamit Kalita | 0 | 0.00 | 0.00 |
+| VENUGOPAL KRISHNAPPA | 2 | 0.00 | 0.00 |
+| Suman Bachu | 0 | 0.00 | 0.00 |
+| HARSHIT SHARMA | 0 | 0.00 | 0.00 |
+| ANEESH ATREYA | 0 | 0.00 | 0.00 |
+| Babu Rao Talwar | 0 | 0.00 | 0.00 |
+| Vineeth Venkatesh | 1 | 0.00 | 0.00 |
+| Shshnirkhey | 4 | 0.00 | 0.00 |
+| Hemachandra | 0 | 0.00 | 0.00 |

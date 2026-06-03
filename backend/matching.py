@@ -173,87 +173,115 @@ def compute_skill_scores(required_skills: List[str],
                          candidate_skills: List[str]) -> Tuple[float, List, List, List, List]:
     """
     Returns (score 0-100, exact, semantic, partial, missing).
-    
-    EXACT MATCH (on normalized skill name)
-    or
-    Semantic Skill Match > 85%
-    Otherwise treat as missing (no substring matching allowed).
+
+    HARD RULES (anti-inflation):
+    - If no required skills listed AND candidate has <3 skills → 30
+    - If no required skills listed AND candidate has skills → 60 (not 100)
+    - Exact match  = 1.0 credit
+    - Semantic ≥0.78 = 0.6 credit  (raised from 0.72, reduced credit from 0.70)
+    - Partial ≥0.55 = 0.3 credit   (raised from 0.50, reduced credit from 0.40)
+    - Fuzzy  ≥80    = 0.25 credit
+    - Every missing REQUIRED skill subtracts additional penalty from final
     """
+    # Guard: no required skills → reduce ceiling
     if not required_skills:
-        return 0.0, [], [], [], []
+        if not candidate_skills:
+            return 25.0, [], [], [], []
+        if len(candidate_skills) < 3:
+            return 40.0, [], [], [], candidate_skills
+        return 60.0, [], [], [], []          # <-- was 100. Now capped at 60
 
     req_norm = [normalize_skill(s) for s in required_skills]
     cand_norm = [normalize_skill(s) for s in candidate_skills]
     req_set = set(req_norm)
     cand_set = set(cand_norm)
 
-    # Exact normalized match
     exact_set = req_set & cand_set
     remaining = req_set - exact_set
 
     semantic_matches: List[str] = []
+    partial_matches: List[str] = []
 
-    if remaining and cand_set:
+    if remaining:
         model = get_model()
-        if model:
+        if model and cand_set:
             try:
                 from sentence_transformers import util
                 req_list = list(remaining)
-                # Compare remaining required skills against all candidate skills
-                cand_list = list(cand_set)
+                cand_list = list(cand_set - exact_set)
                 if cand_list:
                     req_emb = model.encode(req_list, convert_to_tensor=True)
                     cand_emb = model.encode(cand_list, convert_to_tensor=True)
                     sim = util.cos_sim(req_emb, cand_emb)
                     for ri, rsk in enumerate(req_list):
                         max_sim = float(sim[ri].max())
-                        if max_sim > 0.85: # Strict threshold > 85%
+                        if max_sim >= 0.78:          # raised from 0.72
                             semantic_matches.append(rsk)
+                        elif max_sim >= 0.55:        # raised from 0.50
+                            partial_matches.append(rsk)
             except Exception as e:
                 logger.warning(f"[Matching] Semantic match failed: {e}")
 
-    # No substring matching, fuzzy process, or partial matching!
-    missing_set = remaining - set(semantic_matches)
+    still_missing = remaining - set(semantic_matches) - set(partial_matches)
+    try:
+        from rapidfuzz import fuzz, process as rfp
+        for rsk in list(still_missing):
+            match = rfp.extractOne(rsk, list(cand_set), scorer=fuzz.token_set_ratio, score_cutoff=80)
+            if match:
+                partial_matches.append(rsk)
+    except Exception:
+        pass
+
+    missing_set = remaining - set(semantic_matches) - set(partial_matches)
 
     n = len(req_set)
-    # Both exact and semantic > 85% get 1.0 credit, no double penalties
-    credit = len(exact_set) + len(semantic_matches)
-    raw_score = (credit / n) * 100.0
+    credit = (
+        len(exact_set) * 1.00
+        + len(semantic_matches) * 0.60    # reduced from 0.70
+        + len(partial_matches) * 0.30     # reduced from 0.40
+    )
+    raw_score = (credit / n) * 100
+
+    # Hard penalty: ≥40% required skills missing → additional -10 per 10% missing
+    missing_ratio = len(missing_set) / n
+    if missing_ratio >= 0.4:
+        penalty = ((missing_ratio - 0.3) * 100) * 0.5   # e.g. 70% missing → -20pts
+        raw_score = max(0, raw_score - penalty)
 
     return (
         round(_clamp(raw_score), 2),
         sorted(exact_set),
         sorted(semantic_matches),
-        [], # No partial matches
+        sorted(partial_matches),
         sorted(missing_set),
     )
 
 
 # ---------------------------------------------------------------------------
-# Document-level semantic similarity  (20% of total)
+# Document-level semantic similarity  (15% of total)
 # ---------------------------------------------------------------------------
 def compute_semantic_similarity(jd_text: str, resume_text: str) -> float:
     """
     Cosine similarity between JD and resume embeddings.
-    Returns 0-100 cosine score, scaled to realistic range [0.2, 0.7] -> [0.0, 100.0].
+    Returns 0-100 but SCALED DOWN: raw cosine * 70 so max is ~70
+    to prevent semantic score dominating the final score.
     """
     if not jd_text or not resume_text:
-        return 0.0
+        return 30.0
     model = get_model()
     if not model:
-        return 0.0
+        return 40.0
     try:
         from sentence_transformers import util
         emb_jd  = model.encode([jd_text[:3000]], convert_to_tensor=True)
         emb_res = model.encode([resume_text[:3000]], convert_to_tensor=True)
         cos = float(util.cos_sim(emb_jd, emb_res)[0][0])
-        # Scale to [0.2, 0.7] -> [0.0, 100.0]
-        scaled = (cos - 0.2) / 0.5 * 100.0
-        score = _clamp(scaled, 0.0, 100.0)
+        # Map cosine [0,1] → score [0,70] instead of [0,100]
+        score = _clamp(cos * 70.0, 10.0, 70.0)
         return round(score, 2)
     except Exception as e:
         logger.warning(f"[Matching] Semantic similarity failed: {e}")
-        return 0.0
+        return 35.0
 
 
 # ---------------------------------------------------------------------------
@@ -387,35 +415,6 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
     minimum_exp     = float(jd_profile.get("minimum_experience", 0.0) or 0.0)
     jd_exists       = bool(jd_text and jd_text.strip())
 
-    if not required_skills:
-        results = []
-        for candidate in candidates:
-            filename = candidate.get("filename", "resume.pdf")
-            results.append({
-                **candidate,
-                "score": 0.0,
-                "ai_match_score": 0.0,
-                "ai_verdict": "Needs Review",
-                "ranking_status": "JD Parsing Failed",
-                "ranking_error": "JD Parsing Failed",
-                "skill_score": 0.0,
-                "skills_score": 0.0,
-                "experience_score": 0.0,
-                "semantic_score": 0.0,
-                "projects_score": 0.0,
-                "certification_score": 0.0,
-                "certifications_score": 0.0,
-                "resume_quality": 0.0,
-                "missing_skills": [],
-                "matched_skills": [],
-                "hiring_summary": {
-                    "recommendation": "Needs Review",
-                    "narrative": "Evaluation failed: JD Parsing Failed",
-                },
-                "recruiter_explanation": "JD Parsing Failed: No required skills extracted from job description."
-            })
-        return results
-
     results = []
 
     for candidate in candidates:
@@ -459,16 +458,6 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
             if not jd_exists:
                 raise ValueError("no JD attached")
 
-            # Correct/Re-extract details using new local parser rules on the fly!
-            from resume_parser import extract_candidate_details, extract_location
-            local_details = extract_candidate_details(raw_text, filename)
-            local_location = extract_location(raw_text)
-
-            candidate_profile["candidate_name"] = local_details.get("name") or candidate_profile.get("candidate_name")
-            candidate_profile["email"] = local_details.get("email") or candidate_profile.get("email")
-            candidate_profile["phone"] = local_details.get("phone") or candidate_profile.get("phone")
-            candidate_profile["location"] = local_location or candidate_profile.get("location", "Remote")
-
             # ── Step 2: Experience ──────────────────────────────────────
             exp_breakdown = calculate_experience_breakdown(
                 timeline=candidate_profile.get("employment_timeline", []),
@@ -486,11 +475,10 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
             skills_weight = skill_score * 0.40
 
             # ── Step 4: EXPERIENCE (25%) ────────────────────────────────
-            if relevant_exp <= 0:
-                exp_score = 0.0
-            elif minimum_exp <= 0:
+            if minimum_exp <= 0:
                 # No explicit requirement — score based on what they have
-                exp_score = _clamp(min(80.0, relevant_exp * 12.0))
+                # 0 yrs → 20, 1 yr → 40, 3 yrs → 65, 5+ yrs → 80
+                exp_score = _clamp(min(80.0, 20.0 + relevant_exp * 12.0))
             else:
                 ratio = relevant_exp / minimum_exp
                 if ratio >= 1.0:
@@ -500,15 +488,17 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                     exp_score = _clamp(ratio * 70.0)          # e.g. half exp → 35
             exp_weight = exp_score * 0.25
 
-            # ── Step 5: SEMANTIC SIMILARITY (20%) ──────────────────────
+            # ── Step 5: SEMANTIC SIMILARITY (15%) ──────────────────────
             sem_score  = compute_semantic_similarity(jd_text, raw_text)
-            sem_weight = sem_score * 0.20
+            sem_weight = sem_score * 0.15
 
             # ── Step 6: PROJECTS (10%) ─────────────────────────────────
             proj_reqs  = jd_profile.get("project_requirements", [])
             cand_projs = candidate_profile.get("projects", [])
-            if not proj_reqs or not cand_projs:
-                project_score = 0.0
+            if not proj_reqs:
+                # No explicit project reqs: reward having projects, penalize none
+                project_score = 70.0 if len(cand_projs) >= 2 else (
+                    50.0 if len(cand_projs) == 1 else 20.0)   # was 100 / 70
             else:
                 matched_p = [p for p in cand_projs if any(r.lower() in p.lower() for r in proj_reqs)]
                 project_score = _clamp((len(matched_p) / len(proj_reqs)) * 100)
@@ -517,12 +507,16 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
             # ── Step 7: CERTIFICATIONS (5%) ────────────────────────────
             cert_reqs  = jd_profile.get("certifications_required", [])
             cand_certs = candidate_profile.get("certifications", [])
-            if not cert_reqs or not cand_certs:
-                cert_score = 0.0
+            if not cert_reqs:
+                cert_score = 65.0 if cand_certs else 40.0     # was 100 / 70
             else:
                 matched_c = [c for c in cand_certs if any(r.lower() in c.lower() for r in cert_reqs)]
                 cert_score = _clamp((len(matched_c) / len(cert_reqs)) * 100)
             cert_weight = cert_score * 0.05
+
+            # ── Step 8: RESUME QUALITY (5%) ────────────────────────────
+            quality_score, quality_penalties = compute_quality_score(candidate_profile, raw_text)
+            quality_weight = quality_score * 0.05
 
             # ── Weighted sum ────────────────────────────────────────────
             raw_final = (
@@ -531,68 +525,46 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                 + sem_weight
                 + proj_weight
                 + cert_weight
+                + quality_weight
             )
 
-            # ── Global hard penalties applied directly to final score ──
-            deductions = 0.0
+            # ── Global hard penalties ───────────────────────────────────
             global_penalties = []
 
-            # 1. Missing Email Penalty (-15)
-            email_val = candidate_profile.get("email") or ""
-            if not email_val or email_val == "Not Found":
-                deductions += 15.0
-                global_penalties.append("missing email (-15)")
-
-            # 2. Missing Phone Penalty (-10)
-            phone_val = candidate_profile.get("phone") or ""
-            if not phone_val or phone_val == "Not Found":
-                deductions += 10.0
-                global_penalties.append("missing phone (-10)")
-
-            # 3. Missing Experience Penalty (-10)
-            if total_exp <= 0:
-                deductions += 10.0
-                global_penalties.append("missing experience (-10)")
-
-            # P4: Proportional penalty for missing required skills (Model C)
+            # P1: Graduated penalty for missing required skills
             if required_skills:
                 missing_ratio = len(missing) / len(required_skills)
-                if missing_ratio > 0.85:
-                    deduct = 15.0
-                    global_penalties.append("86-100% required skills missing (-15.0)")
-                    deductions += deduct
-                elif missing_ratio > 0.70:
-                    deduct = 12.0
-                    global_penalties.append("71-85% required skills missing (-12.0)")
-                    deductions += deduct
-                elif missing_ratio > 0.50:
-                    deduct = 7.0
-                    global_penalties.append("51-70% required skills missing (-7.0)")
-                    deductions += deduct
-                elif missing_ratio > 0.30:
-                    deduct = 3.0
-                    global_penalties.append("31-50% required skills missing (-3.0)")
-                    deductions += deduct
+                if missing_ratio >= 0.7:          # >70% skills missing
+                    deduct = 20
+                    global_penalties.append(f">70% required skills missing -{deduct}pts")
+                    raw_final -= deduct
+                elif missing_ratio >= 0.5:        # 50-70% skills missing
+                    deduct = 12
+                    global_penalties.append(f">50% required skills missing -{deduct}pts")
+                    raw_final -= deduct
+                elif missing_ratio >= 0.3 and skill_score < 50:
+                    deduct = 6
+                    global_penalties.append(f">30% required skills missing -{deduct}pts")
+                    raw_final -= deduct
 
-            # P5: Experience far below requirement
+            # P2: Experience far below requirement
             if minimum_exp > 0 and relevant_exp < minimum_exp * 0.5:
-                deductions += 10.0
+                raw_final -= 10
                 global_penalties.append(
-                    f"Experience severely below requirement ({relevant_exp:.1f} vs {minimum_exp:.1f}yrs) (-10)")
+                    f"Experience severely below requirement ({relevant_exp:.1f} vs {minimum_exp:.1f}yrs) -10pts")
 
-            # P6: Very short resume
+            # P3: Very short resume
             if len(raw_text) < 500:
-                deductions += 10.0
-                global_penalties.append("Severely incomplete resume (<500 chars) (-10)")
+                raw_final -= 10
+                global_penalties.append("Severely incomplete resume (<500 chars) -10pts")
 
-            # P7: Low extraction confidence
+            # P4: Low extraction confidence
             conf = candidate_profile.get("confidence_score", 75.0) or 75.0
             if conf < 50:
-                deductions += 8.0
-                global_penalties.append(f"Low extraction confidence ({conf:.0f}) (-8)")
+                raw_final -= 8
+                global_penalties.append(f"Low extraction confidence ({conf:.0f}) -8pts")
 
-            raw_final -= deductions
-            final_score = _clamp(raw_final, 0.0, 100.0)
+            final_score = _clamp(raw_final)
 
             # ── Verdict mapping ─────────────────────────────────────────
             ai_verification = verify_with_recruiter_ai(candidate_profile, jd_profile)
@@ -609,7 +581,7 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                 }
 
             # ── Build recruiter explanation ──────────────────────────────
-            penalty_text = "; ".join(global_penalties) or "None"
+            penalty_text = "; ".join(global_penalties + quality_penalties) or "None"
             recruiter_exp = (
                 f"Matched {len(exact)} of {len(required_skills)} required skills. "
                 f"Experience: {relevant_exp:.1f}yrs (req {minimum_exp:.1f}yrs). "
@@ -634,28 +606,23 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                 "semantic_score":      round(sem_score, 2),
                 "project_score":       round(project_score, 2),
                 "cert_score":          round(cert_score, 2),
-                "quality_score":       0.0,
-                "penalties":           global_penalties,
+                "quality_score":       round(quality_score, 2),
+                "penalties":           global_penalties + quality_penalties,
                 "final_score":         round(final_score, 2),
             }
 
             print(f"  skill={skill_score:.1f}  exp={exp_score:.1f}  sem={sem_score:.1f}  "
-                  f"proj={project_score:.1f}  cert={cert_score:.1f}")
+                  f"proj={project_score:.1f}  cert={cert_score:.1f}  qual={quality_score:.1f}")
             print(f"  FINAL={final_score:.1f}  verdict={ai_verdict}")
             print(f"  missing={missing[:5]}  penalties={global_penalties}")
 
             updated_candidate = {
                 **candidate,
                 **candidate_profile,
-                "name":                candidate_profile["candidate_name"],
-                "email":               candidate_profile["email"],
-                "phone":               candidate_profile["phone"],
-                "location":            candidate_profile["location"],
                 "score":               round(final_score, 2),
                 "ai_match_score":      round(final_score, 2),
                 "ai_verdict":          ai_verdict,
                 "ranking_error":       None,
-                "ranking_status":      "Completed",
                 # Individual component scores
                 "skill_score":         round(skill_score, 2),
                 "skills_score":        round(skill_score, 2),
@@ -664,7 +631,7 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                 "projects_score":      round(project_score, 2),
                 "certification_score": round(cert_score, 2),
                 "certifications_score": round(cert_score, 2),
-                "resume_quality":      0.0,
+                "resume_quality":      round(quality_score, 2),
                 # Skill breakdown
                 "matched_skills":      sorted(set(exact) | set(semantic_m) | set(partial)),
                 "missing_skills":      missing,
@@ -708,7 +675,6 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                 "ai_match_score": None,
                 "ai_verdict": verdict_msg,
                 "ranking_error": error_str,
-                "ranking_status": "Failed",
                 "skill_score": 0.0,
                 "skills_score": None,
                 "experience_score": None,

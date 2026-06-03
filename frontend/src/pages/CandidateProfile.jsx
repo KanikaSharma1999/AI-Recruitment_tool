@@ -7,13 +7,15 @@ import InterviewModal from '../components/InterviewModal';
 import InterviewMonitor from '../components/InterviewMonitor';
 import ScoreDimensions from '../components/ScoreDimensions';
 import HiringSummaryCard from '../components/HiringSummaryCard';
-import InterviewPrepCard from '../components/InterviewPrepCard';
 import InterviewInsightCard from '../components/InterviewInsightCard';
 import API from '../api/client';
 import toast from 'react-hot-toast';
-import { MdArrowBack, MdCalendarToday, MdThumbUp, MdThumbDown, MdCheckCircle,
-         MdSend, MdDelete, MdOpenInNew, MdInfoOutline, MdExpandMore, MdExpandLess, MdCompare,
-         MdContentCopy, MdEmail, MdShare } from 'react-icons/md';
+import { 
+  MdArrowBack, MdCalendarToday, MdThumbUp, MdThumbDown, MdCheckCircle,
+  MdSend, MdDelete, MdOpenInNew, MdInfoOutline, MdExpandMore, MdExpandLess,
+  MdContentCopy, MdEmail, MdShare, MdPerson, MdLocationOn, MdPhone,
+  MdLayers, MdChatBubble, MdAccessTime, MdArticle, MdListAlt
+} from 'react-icons/md';
 
 // ── Score helpers ─────────────────────────────────────────────────────────────
 const safeScore = (value) => {
@@ -22,7 +24,7 @@ const safeScore = (value) => {
 };
 
 const getColor = (score) => {
-  if (score > 80) return '#22c55e';
+  if (score > 80) return '#10b981';
   if (score > 50) return '#f59e0b';
   return '#ef4444';
 };
@@ -34,13 +36,14 @@ const ResumePreview = ({ id, filename }) => {
   const url = `${API.defaults.baseURL}/candidates/${id}/resume`;
 
   return (
-    <div style={{ marginTop: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700 }}>Resume: {filename}</h3>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: '#334155' }}>File: {filename}</h3>
         <div style={{ display: 'flex', gap: 8 }}>
           <button 
             className="btn btn-sm btn-outline"
             onClick={() => window.open(url, '_blank')}
+            style={{ fontSize: 12 }}
           >
             <MdOpenInNew /> Open External
           </button>
@@ -48,30 +51,30 @@ const ResumePreview = ({ id, filename }) => {
             href={url} 
             download 
             className="btn btn-sm btn-outline"
-            style={{ textDecoration: 'none', color: 'inherit' }}
+            style={{ textDecoration: 'none', color: 'inherit', fontSize: 12 }}
           >
-            <MdSend style={{ transform: 'rotate(90deg)' }} /> Download
+            Download Original PDF
           </a>
         </div>
       </div>
 
       <div style={{ 
-        height: 500, background: 'var(--bg-secondary)', borderRadius: 12, 
-        border: '1px solid var(--border)', overflow: 'hidden', position: 'relative',
+        height: 600, background: '#f8fafc', borderRadius: 12, 
+        border: '1px solid #e2e8f0', overflow: 'hidden', position: 'relative',
         display: 'flex', alignItems: 'center', justifyContent: 'center'
       }}>
         {loading && !error && (
-          <div style={{ position: 'absolute', textAlign: 'center' }}>
+          <div style={{ position: 'absolute', textAlign: 'center', zIndex: 10 }}>
             <div className="spinner" style={{ margin: '0 auto 10px' }} />
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Loading resume preview...</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>Loading resume preview...</div>
           </div>
         )}
 
         {error ? (
           <div style={{ textAlign: 'center', padding: 20 }}>
-            <MdInfoOutline size={40} style={{ color: 'var(--text-muted)', marginBottom: 10 }} />
+            <MdInfoOutline size={40} style={{ color: '#94a3b8', marginBottom: 10 }} />
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Resume File Not Found</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', maxWidth: 250 }}>
+            <div style={{ fontSize: 13, color: '#64748b', maxWidth: 250 }}>
               The physical file might have been moved or deleted from the server.
             </div>
           </div>
@@ -88,14 +91,14 @@ const ResumePreview = ({ id, filename }) => {
   );
 };
 
-// ── Clean score bar (shows ONLY the actual score, no weight mixing) ────────────
+// ── Clean score bar ───────────────────────────────────────────────────────────
 const ScoreBar = ({ label, score, tooltip }) => {
   const s = safeScore(score);
   const [showTip, setShowTip] = useState(false);
   return (
-    <div className="score-bar-wrap">
-      <div className="score-bar-label">
-        <span style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: 4 }}>
           {label}
           {tooltip && (
             <span
@@ -103,207 +106,23 @@ const ScoreBar = ({ label, score, tooltip }) => {
               onMouseEnter={() => setShowTip(true)}
               onMouseLeave={() => setShowTip(false)}
             >
-              <MdInfoOutline style={{ fontSize: 13, color: 'var(--text-secondary)', verticalAlign: 'middle' }} />
+              <MdInfoOutline style={{ fontSize: 13, color: '#94a3b8', verticalAlign: 'middle' }} />
               {showTip && (
                 <span style={{
                   position: 'absolute', left: 20, top: -4, zIndex: 10,
-                  background: '#1e293b', color: '#fff', fontSize: 11,
+                  background: '#1e293b', color: '#fff', fontSize: 10,
                   padding: '4px 8px', borderRadius: 6, whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
                 }}>{tooltip}</span>
               )}
             </span>
           )}
         </span>
-        <span style={{ fontWeight: 800, color: getColor(s), fontSize: 15 }}>{s}%</span>
+        <span style={{ fontWeight: 800, color: getColor(s), fontSize: 14 }}>{s}%</span>
       </div>
-      <div className="score-bar-track">
-        <div className="score-bar-fill" style={{ width: `${s}%`, backgroundColor: getColor(s),
-          transition: 'width 0.6s cubic-bezier(0.4,0,0.2,1)' }} />
+      <div style={{ height: 6, background: '#f1f5f9', borderRadius: 999, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${s}%`, backgroundColor: getColor(s),
+          borderRadius: 999, transition: 'width 0.6s cubic-bezier(0.4,0,0.2,1)' }} />
       </div>
-    </div>
-  );
-};
-
-// ── AI Match Score card ────────────────────────────────────────────────────────
-const AIMatchScoreCard = ({ c }) => {
-  const [showWeights, setShowWeights] = useState(false);
-  const [showExplanation, setShowExplanation] = useState(false);
-
-  const overall   = safeScore(c.ai_match_score !== undefined && c.ai_match_score !== null ? c.ai_match_score : c.score);
-  const skillS    = safeScore(c.skills_score !== undefined && c.skills_score !== null ? c.skills_score : c.skill_score);
-  const expS      = safeScore(c.experience_score);
-  const semanticS = safeScore(c.semantic_score);
-  const projS     = safeScore(c.projects_score !== undefined ? c.projects_score : c.project_score);
-  const certS     = safeScore(c.certification_score !== undefined ? c.certification_score : c.cert_score);
-  const qualS     = safeScore(c.resume_quality !== undefined ? c.resume_quality : c.quality_score);
-
-  const ringColor = getColor(overall);
-
-  // Extract explanation lists from either candidate or legacy match_explanation
-  const expl = c.match_explanation || {};
-  const exactMatches = c.exact_matches || expl.exact_matches || [];
-  const semanticMatches = c.semantic_matches || expl.semantic_matches || [];
-  const partialMatches = c.partial_matches || expl.partial_matches || [];
-  const missingSkills = c.missing_skills || expl.missing_skills || [];
-  const bonusSkills = c.bonus_skills || expl.bonus_skills || [];
-  const projectsList = c.projects || expl.projects || [];
-  const certsList = c.certifications || expl.certifications || [];
-
-  return (
-    <div className="card">
-      <h3 style={{ marginBottom: 16, fontSize: 15, fontWeight: 700 }}>🎯 AI Match Score</h3>
-
-      {/* Overall score ring */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 20 }}>
-        <div style={{
-          width: 90, height: 90, borderRadius: '50%',
-          background: `conic-gradient(${ringColor} ${overall * 3.6}deg, #e2e8f0 0deg)`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          boxShadow: `0 0 0 6px ${ringColor}18`,
-        }}>
-          <div style={{
-            width: 68, height: 68, borderRadius: '50%',
-            background: 'var(--bg-primary)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <span style={{ fontSize: 22, fontWeight: 900, color: ringColor, lineHeight: 1 }}>{overall}%</span>
-            <span style={{ fontSize: 9, color: 'var(--text-secondary)', fontWeight: 600 }}>OVERALL</span>
-          </div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-            Overall Match Score
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            {c.ai_verdict || (overall >= 80 ? 'Excellent match' : overall >= 60 ? 'Good match' : overall >= 40 ? 'Partial match' : 'Weak match')}
-          </div>
-        </div>
-      </div>
-
-      {/* Score breakdown — actual scores ONLY */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Score Breakdown
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <ScoreBar label="Skill Match"      score={skillS}
-            tooltip="How well candidate's skills match the job requirements" />
-          <ScoreBar label="Experience Match" score={expS}
-            tooltip="Candidate's years of experience vs. required years" />
-          <ScoreBar label="Semantic Match"   score={semanticS}
-            tooltip="AI-assessed contextual relevance of resume content to the job" />
-        </div>
-      </div>
-
-      {/* Weights toggle — separated from scores */}
-      <button
-        onClick={() => setShowWeights(v => !v)}
-        style={{
-          background: 'var(--bg-secondary)', border: '1px solid var(--border)',
-          borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-          color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4,
-          width: '100%', justifyContent: 'space-between', marginBottom: 4,
-        }}
-      >
-        <span>How is this score calculated?</span>
-        {showWeights ? <MdExpandLess /> : <MdExpandMore />}
-      </button>
-      {showWeights && (
-        <div style={{
-          background: 'var(--bg-secondary)', borderRadius: 8, padding: '12px 14px',
-          marginBottom: 8, fontSize: 12, lineHeight: 1.8,
-        }}>
-          <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Weights Used</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
-            {[
-              ['Skills', 40, '#6366f1'],
-              ['Experience', 25, '#f59e0b'],
-              ['Semantic', 15, '#22c55e'],
-              ['Projects', 10, '#8b5cf6'],
-              ['Certifications', 5, '#06b6d4'],
-              ['Resume Quality', 5, '#ec4899']
-            ].map(([label, w, color]) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
-                <span><b>{label}</b>: {w}%</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 11, color: '#6366f1',
-            background: '#eef2ff', padding: '4px 8px', borderRadius: 4 }}>
-            {'0.40×skills + 0.25×exp + 0.15×sem + 0.10×projects + 0.05×cert + 0.05×quality'}
-          </div>
-        </div>
-      )}
-
-      {/* Why this score — expandable explanation */}
-      <button
-        onClick={() => setShowExplanation(v => !v)}
-        style={{
-          background: 'linear-gradient(135deg, #eff6ff, #f0fdf4)',
-          border: '1px solid #bfdbfe', borderRadius: 8,
-          padding: '6px 12px', fontSize: 12, cursor: 'pointer',
-          color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: 4,
-          width: '100%', justifyContent: 'space-between', fontWeight: 600,
-        }}
-      >
-        <span>Why this score? (Match Explanation)</span>
-        {showExplanation ? <MdExpandLess /> : <MdExpandMore />}
-      </button>
-      {showExplanation && (
-        <div style={{
-          border: '1px solid #bfdbfe', borderRadius: 8, padding: 14,
-          marginTop: 6, background: '#fafbff', fontSize: 13,
-        }}>
-          {c.recruiter_explanation && (
-            <div style={{ marginBottom: 10, fontWeight: 600, color: '#1d4ed8', lineHeight: 1.5 }}>
-              {c.recruiter_explanation}
-            </div>
-          )}
-          {exactMatches.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', marginBottom: 4 }}>Exact Skill Matches</div>
-              <div>{exactMatches.map(s => <span key={s} style={{ display:'inline-block', background:'#f0fdf4', color:'#15803d', border:'1px solid #bbf7d0', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-            </div>
-          )}
-          {semanticMatches.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Semantic Matches (AI-detected variants)</div>
-              <div>{semanticMatches.map(s => <span key={s} style={{ display:'inline-block', background:'#f5f3ff', color:'#7c3aed', border:'1px solid #ddd6fe', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-            </div>
-          )}
-          {partialMatches.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#d97706', marginBottom: 4 }}>Partial Matches (fuzzy)</div>
-              <div>{partialMatches.map(s => <span key={s} style={{ display:'inline-block', background:'#fffbeb', color:'#d97706', border:'1px solid #fde68a', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-            </div>
-          )}
-          {missingSkills.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>Missing Required Skills</div>
-              <div>{missingSkills.map(s => <span key={s} style={{ display:'inline-block', background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-            </div>
-          )}
-          {bonusSkills.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', marginBottom: 4 }}>Bonus Skills (beyond requirements)</div>
-              <div>{bonusSkills.map(s => <span key={s} style={{ display:'inline-block', background:'#ecfeff', color:'#0891b2', border:'1px solid #a5f3fc', borderRadius:20, fontSize:11, fontWeight:600, padding:'2px 8px', margin:'2px 3px 2px 0' }}>{s}</span>)}</div>
-            </div>
-          )}
-          {certsList.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#0f766e', marginBottom: 4 }}>Certifications</div>
-              <div style={{ fontSize: 12, color: '#0f766e' }}>{certsList.join(' · ')}</div>
-            </div>
-          )}
-          {projectsList.length > 0 && (
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', marginBottom: 4 }}>Detected Projects</div>
-              <div style={{ fontSize: 12 }}>{projectsList.join(' · ')}</div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
@@ -312,130 +131,22 @@ const AIMatchScoreCard = ({ c }) => {
 const SkillChip = ({ skill, variant }) => {
   const styles = {
     required: { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' },
-    matched:  { background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' },
-    missing:  { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' },
-    neutral:  { background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)' },
+    matched:  { background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' },
+    missing:  { background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' },
+    neutral:  { background: '#f8fafc', color: '#334155', border: '1px solid #e2e8f0' },
   };
   return (
     <span style={{
       display: 'inline-block',
       padding: '3px 10px',
       borderRadius: 20,
-      fontSize: 12,
+      fontSize: 11.5,
       fontWeight: 600,
-      margin: '3px 4px 3px 0',
+      margin: '2px 4px 2px 0',
       ...styles[variant || 'neutral'],
     }}>
       {skill}
     </span>
-  );
-};
-
-// ── Skill section with header and empty-state ─────────────────────────────────
-const SkillSection = ({ icon, title, titleColor, skills, variant, emptyText }) => {
-  if (!skills || skills.length === 0) {
-    if (!emptyText) return null;
-    return (
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: titleColor, marginBottom: 6 }}>
-          {icon} {title}
-        </div>
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{emptyText}</span>
-      </div>
-    );
-  }
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: titleColor, marginBottom: 6 }}>
-        {icon} {title} <span style={{ fontWeight: 400 }}>({skills.length})</span>
-      </div>
-      <div>
-        {skills.map(s => <SkillChip key={s} skill={s} variant={variant} />)}
-      </div>
-    </div>
-  );
-};
-
-// ── AI Interview feedback card ────────────────────────────────────────────────
-const AiFeedbackCard = ({ candidate }) => {
-  const feedback = candidate.ai_analysis;
-  if (!feedback) return (
-    <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-      AI Interview Analysis will be generated automatically after the interview ends.
-    </p>
-  );
-
-  const riskColor = {
-    High:   '#ef4444',
-    Medium: '#f59e0b',
-    Low:    '#22c55e',
-  }[feedback.cheating_risk] || 'var(--text-primary)';
-
-  const recColor = feedback.recommendation?.toLowerCase().includes('hire')
-    ? '#22c55e'
-    : feedback.recommendation?.toLowerCase().includes('reject')
-    ? '#ef4444'
-    : '#f59e0b';
-
-  const metrics = feedback.metrics || {};
-  const explanation = feedback.explanation_details || {};
-
-  const MetricItem = ({ label, value, subtext }) => (
-    <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-        <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>{label}</span>
-        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)' }}>{value}</span>
-      </div>
-      {subtext && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{subtext}</div>}
-    </div>
-  );
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {/* Overview Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-        <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 10 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 4 }}>COMMUNICATION</div>
-          <div style={{ fontSize: 18, fontWeight: 900, color: '#6366f1' }}>{feedback.communication}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{metrics.comm_score}% Performance</div>
-        </div>
-        <div style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 10 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 4 }}>CONFIDENCE</div>
-          <div style={{ fontSize: 18, fontWeight: 900, color: '#f59e0b' }}>{feedback.confidence}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{metrics.conf_score}% Gaze Stability</div>
-        </div>
-      </div>
-
-      <MetricItem 
-        label="Speaking Ratio" 
-        value={`${metrics.speaking_ratio}%`} 
-        subtext={explanation.communication} 
-      />
-      <MetricItem 
-        label="Eye Contact" 
-        value={`${metrics.eye_contact}%`} 
-        subtext={explanation.confidence} 
-      />
-      <MetricItem 
-        label="Cheating Risk" 
-        value={feedback.cheating_risk} 
-        valueColor={riskColor}
-        subtext={explanation.security} 
-      />
-
-      {/* Reasoning & Recommendation */}
-      <div style={{ marginTop: 16, padding: 16, borderRadius: 12, 
-                    background: feedback.recommendation?.toLowerCase().includes('hire') ? '#f0fdf4' : '#fef2f2',
-                    border: `1px solid ${recColor}40` }}>
-        <div style={{ marginBottom: 10 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Final Verdict: </span>
-          <span style={{ fontWeight: 900, fontSize: 16, color: recColor }}>{feedback.recommendation}</span>
-        </div>
-        <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)', fontStyle: 'italic' }}>
-          " {feedback.reasoning} "
-        </div>
-      </div>
-    </div>
   );
 };
 
@@ -449,126 +160,100 @@ const TranscriptModal = ({ candidate, onClose }) => {
       zIndex: 1000, padding: 20
     }} onClick={onClose}>
       <div style={{
-        background: '#fff', width: '100%', maxWidth: 700, borderRadius: 16,
-        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
-        display: 'flex', flexDirection: 'column', maxHeight: '85vh',
-        animation: 'modalSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+        background: '#ffffff', borderRadius: 16, width: '100%', maxWidth: 700,
+        height: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0'
       }} onClick={e => e.stopPropagation()}>
-        <div style={{
-          padding: '18px 24px', borderBottom: '1px solid #e2e8f0',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-        }}>
-          <div>
-            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', margin: 0 }}>💬 Interview Transcript</h3>
-            <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>Candidate: {candidate.name}</p>
-          </div>
-          <button style={{
-            background: 'none', border: 'none', fontSize: 20, cursor: 'pointer',
-            color: '#94a3b8'
-          }} onClick={onClose}>&times;</button>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700 }}>Interview Transcript Stream — {candidate.name}</h3>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ minWidth: 'auto', padding: 6 }}><MdClose size={20} /></button>
         </div>
-        <div style={{ padding: 24, overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {transcript.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>No transcript recorded for this interview.</p>
-          ) : (
-            transcript.map((line, idx) => {
-              const speaker = idx % 2 === 0 ? "Interviewer" : "Candidate";
-              const isInterviewer = speaker === "Interviewer";
-              return (
-                <div key={idx} style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: isInterviewer ? 'flex-start' : 'flex-end',
-                  width: '100%'
+        <div style={{ flex: 1, padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {transcript.length > 0 ? transcript.map((line, idx) => {
+            const isObj = typeof line === 'object' && line !== null;
+            const text = isObj ? line.text : line;
+            const speaker = isObj ? (line.speaker || 'Candidate') : 'Candidate';
+            const timestamp = isObj ? (line.timestamp || '') : '';
+            const isInterviewer = speaker === 'Interviewer';
+
+            return (
+              <div key={idx} style={{ 
+                display: 'flex', gap: 10, alignItems: 'flex-start', maxWidth: '85%',
+                alignSelf: isInterviewer ? 'flex-end' : 'flex-start',
+                flexDirection: isInterviewer ? 'row-reverse' : 'row'
+              }}>
+                <div style={{ 
+                  width: '28px', height: '28px', borderRadius: '50%', 
+                  background: isInterviewer ? '#d1fae5' : '#e0e7ff', 
+                  color: isInterviewer ? '#065f46' : '#4f46e5', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700
                 }}>
-                  <div style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: '#64748b',
-                    marginBottom: 4,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    {speaker}
-                  </div>
-                  <div style={{
-                    background: isInterviewer ? '#f1f5f9' : '#e0e7ff',
-                    color: isInterviewer ? '#334155' : '#3730a3',
-                    padding: '10px 14px',
-                    borderRadius: 12,
-                    borderBottomLeftRadius: isInterviewer ? 0 : 12,
-                    borderBottomRightRadius: isInterviewer ? 12 : 0,
-                    fontSize: 13.5,
-                    lineHeight: 1.5,
-                    maxWidth: '80%',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                  }}>
-                    {line}
-                  </div>
+                  {speaker[0]}
                 </div>
-              );
-            })
+                <div style={{ 
+                  background: isInterviewer ? '#ecfdf5' : '#f3f4f6', 
+                  padding: '10px 14px', borderRadius: 12, border: `1px solid ${isInterviewer ? '#a7f3d0' : '#e5e7eb'}` 
+                }}>
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 4, fontSize: 10, color: '#6b7280', fontWeight: 500 }}>
+                    <span style={{ fontWeight: 600, color: isInterviewer ? '#065f46' : '#4f46e5' }}>{speaker} {timestamp && `[${timestamp}]`}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#1f2937', lineHeight: 1.5 }}>{text}</div>
+                </div>
+              </div>
+            );
+          }) : (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>No transcript available for this candidate.</div>
           )}
         </div>
-        <div style={{ padding: '14px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn btn-outline btn-sm" onClick={onClose}>Close</button>
-        </div>
-        <style>{`
-          @keyframes modalSlideIn {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-          }
-        `}</style>
       </div>
     </div>
   );
 };
 
-// ── Main component ────────────────────────────────────────────────────────────
 export default function CandidateProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
+
   const [c, setC] = useState(null);
+  const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [showInterview, setShowInterview] = useState(false);
-  const [isInterviewing, setIsInterviewing] = useState(false);
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
+  const [showRecording, setShowRecording] = useState(false);
 
-  const fetchCandidate = () => {
-    setLoading(true);
-    API.get(`/candidates/${id}`)
-      .then(r => {
-        setC(r.data);
-        if (r.data?.interview?.status === 'live') {
-          setIsInterviewing(true);
-        } else {
-          setIsInterviewing(false);
-        }
-        // Debug scores in console
-        console.log('[SCORE DEBUG]', {
-          score:            r.data.score,
-          semantic_score:   r.data.semantic_score,
-          skill_score:      r.data.skill_score,
-          experience_score: r.data.experience_score,
-          job_required:     r.data.job_required_skills,
-          matched:          r.data.matched_skills,
-          missing:          r.data.missing_skills,
-        });
-      })
-      .catch(() => toast.error('Candidate not found'))
-      .finally(() => setLoading(false));
+  // Tab Control
+  const [activeTab, setActiveTab] = useState('overview');
+
+  const fetchCandidate = async () => {
+    try {
+      const r = await API.get(`/candidates/${id}`);
+      setC(r.data);
+      if (r.data?.job_id) {
+        const jr = await API.get(`/jobs/${r.data.job_id}`);
+        setJob(jr.data);
+      }
+    } catch (err) {
+      toast.error('Candidate not found');
+      navigate('/candidates');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(fetchCandidate, [id]);
+  useEffect(() => {
+    fetchCandidate();
+  }, [id]);
 
   const updateStatus = async (status) => {
     try {
       await API.put(`/candidates/${id}/status`, { status });
-      toast.success(`Status → ${status}`);
+      toast.success(`Pipeline status updated to ${status}`);
       fetchCandidate();
-    } catch { toast.error('Update failed'); }
+    } catch {
+      toast.error('Failed to update stage');
+    }
   };
 
   const addNote = async (e) => {
@@ -577,658 +262,561 @@ export default function CandidateProfile() {
     setSavingNote(true);
     try {
       await API.post(`/candidates/${id}/notes`, { text: note });
+      toast.success('Note recorded');
       setNote('');
-      toast.success('Note saved');
       fetchCandidate();
-    } catch { toast.error('Failed to save note'); }
-    finally { setSavingNote(false); }
+    } catch {
+      toast.error('Failed to record comment');
+    } finally {
+      setSavingNote(false);
+    }
   };
 
-  const [showRecording, setShowRecording] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('recording') === 'true';
-  });
-
-  const startInterview = async () => {
-    if (!c.interview?.meeting_link) {
-      toast.error('No meeting link scheduled. Schedule an interview first.');
-      return;
-    }
-    // Navigate to the secure, proctored InterviewRoom
+  const startInterview = () => {
     navigate(`/interview-room/${id}`);
-  };
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('start') === 'true' && c && c.interview && c.interview.status === 'scheduled') {
-      // Clear query params so it doesn't trigger repeatedly on re-render
-      const url = new URL(window.location.href);
-      url.searchParams.delete('start');
-      window.history.replaceState({}, '', url.toString());
-      startInterview();
-    }
-  }, [c]);
-
-  const endInterview = async () => {
-    setIsInterviewing(false);
-    toast.success('Interview ended. Generating AI Analysis...');
-    try {
-      await API.post('/interviews/end', { candidate_id: id });
-      fetchCandidate();
-    } catch (err) {
-      toast.error('Failed to end interview and trigger analysis');
-    }
   };
 
   const downloadReport = async () => {
     try {
-      const response = await API.get(`/interviews/export/${id}`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `interview_report_${c.name.replace(/\s+/g, '_')}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-      toast.success('Report downloaded');
-    } catch (err) {
-      toast.error('Failed to download PDF report');
+      const r = await API.get(`/report/candidate/${id}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${c.name}_interview_report.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download report');
     }
   };
 
-  if (loading) return (
-    <div className="layout">
-      <Sidebar /><div className="main-content">
-        <Navbar title="Candidate Profile" />
-        <div style={{ padding: 60, textAlign: 'center' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
+  if (loading) {
+    return (
+      <div className="layout">
+        <Sidebar />
+        <div className="main-content flex-center">
+          <div className="spinner" />
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   if (!c) return null;
 
-  // Experience score color: red if 0, otherwise normal
-  const expYears      = c.experience_years || 0;
-  const expScoreSafe  = safeScore(c.experience_score);
-  const expColor      = expYears <= 0 ? '#ef4444' : getColor(expScoreSafe);
-
-  // Skill breakdown data
-  const jdSkills      = c.job_required_skills || [];
-  const matchedSkills = c.matched_skills      || [];
-  const missingSkills = c.missing_skills      || [];
-  const allSkills     = c.skills              || [];
-
-  // Check if scheduled interview is missed (past 15 minutes limit)
+  const isInterviewing = c.status === 'interview_scheduled' || c.status === 'interview_live';
+  
+  // Expiry check
   let isMissed = false;
-  if (c.interview && c.interview.date && c.interview.time) {
-    const scheduledDateTime = new Date(`${c.interview.date}T${c.interview.time}:00`);
-    const cutOffTime = new Date(scheduledDateTime.getTime() + 15 * 60 * 1000);
-    if (new Date() > cutOffTime) {
-      isMissed = true;
-    }
+  if (c.interview && c.interview.date && c.interview.time && c.status === 'interview_scheduled') {
+    try {
+      const interviewISO = `${c.interview.date}T${c.interview.time}:00`;
+      const interviewTime = new Date(interviewISO).getTime();
+      const expirationLimit = interviewTime + 15 * 60 * 1000;
+      if (Date.now() > expirationLimit) {
+        isMissed = true;
+      }
+    } catch {}
   }
 
-  return (
-    <div className="layout">
-      <Sidebar />
-      <div className="main-content">
-        <Navbar title="Candidate Profile" />
-        <div className="page-body animate-fade">
+  const overall = safeScore(c.ai_match_score !== undefined && c.ai_match_score !== null ? c.ai_match_score : c.score);
+  const ringColor = getColor(overall);
 
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-            <button className="btn btn-outline btn-sm" onClick={() => navigate(-1)}>
-              <MdArrowBack /> Back
+  // Extract explanation details
+  const expl = c.match_explanation || {};
+  const exactMatches = c.exact_matches || expl.exact_matches || [];
+  const semanticMatches = c.semantic_matches || expl.semantic_matches || [];
+  const partialMatches = c.partial_matches || expl.partial_matches || [];
+  const missingSkills = c.missing_skills || expl.missing_skills || [];
+  const bonusSkills = c.bonus_skills || expl.bonus_skills || [];
+  const projectsList = c.projects || expl.projects || [];
+  const certsList = c.certifications || expl.certifications || [];
+  const expYears = c.experience_years !== undefined ? c.experience_years : (c.experience || 0);
+
+  return (
+    <div className="layout font-inter">
+      <Sidebar />
+      <div className="main-content" style={{ display: 'flex', flexDirection: 'column', background: '#f8fafc' }}>
+        
+        {/* Sticky Profile Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 32px',
+          borderBottom: '1px solid #e2e8f0',
+          background: '#ffffff',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <button 
+              onClick={() => navigate(-1)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', padding: 6 }}
+            >
+              <MdArrowBack size={20} />
             </button>
-            <div style={{ flex: 1 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 600 }}>{c.name}</h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{c.email} · {c.phone}</p>
+            <div style={{
+              width: 42,
+              height: 42,
+              borderRadius: '50%',
+              background: `conic-gradient(${ringColor} ${overall * 3.6}deg, #e2e8f0 0deg)`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: `0 0 0 3px ${ringColor}18`
+            }}>
+              <div style={{
+                width: 34, height: 34, borderRadius: '50%', background: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, color: '#0f172a'
+              }}>
+                {overall}%
+              </div>
             </div>
-            <StatusBadge status={c.status} interview={c.interview} />
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <h1 className="tracking-tight" style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>{c.name}</h1>
+                <span className={`badge badge-${c.status?.toLowerCase().replace(' ', '-')}`} style={{ fontWeight: 700 }}>
+                  {c.status?.toUpperCase()?.replace('_', ' ')}
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                Applied for <b>{job?.title || c.job_title || 'General Position'}</b> · {c.location || 'Remote'}
+              </div>
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20 }}>
-            {/* ── LEFT COLUMN ── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-              {/* AI Scoring — Multi-Dimensional */}
-              <div className="card">
-                <div className="card-title">AI Match Intelligence</div>
-                <ScoreDimensions candidate={c} />
-              </div>
-
-              {/* Recruiter Matching Explanation & Enterprise Details */}
-              {c.recruiter_explanation && (
-                <div className="card" style={{ border: '1px solid #bfdbfe', background: 'linear-gradient(135deg, #eff6ff, #f8fafc)', borderRadius: 12, padding: 20 }}>
-                  <h3 style={{ margin: '0 0 12px 0', fontSize: 15, fontWeight: 600, color: '#1e40af', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    Recruiter matching explanation
-                  </h3>
-                  <div style={{ color: '#1e3a8a', fontSize: 13.5, lineHeight: 1.6, whiteSpace: 'pre-line', marginBottom: 16 }}>
-                    {c.recruiter_explanation}
-                  </div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, borderTop: '1px solid #dbeafe', paddingTop: 14 }}>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', marginBottom: 2 }}>AI Confidence</div>
-                      <div style={{ fontSize: 13.5, fontWeight: 800, color: c.extraction_reliability === 'High' ? '#059669' : c.extraction_reliability === 'Medium' ? '#d97706' : '#dc2626' }}>
-                        {c.confidence_score ? `${Math.round(c.confidence_score)}%` : '75%'} ({c.extraction_reliability || 'Medium'})
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', marginBottom: 2 }}>Leadership Match</div>
-                      <div style={{ fontSize: 13.5, fontWeight: 800, color: c.leadership_match === 'Yes' ? '#059669' : '#4b5563' }}>
-                        {c.leadership_match || 'No'}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', marginBottom: 2 }}>Communication</div>
-                      <div style={{ fontSize: 13.5, fontWeight: 800, color: c.communication_match === 'Verified' ? '#059669' : '#4b5563' }}>
-                        {c.communication_match || 'Baseline'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {c.ambiguity_detection && c.ambiguity_detection.length > 0 && (
-                    <div style={{ marginTop: 14, fontSize: 11.5, color: '#6b7280', borderTop: '1px dashed #dbeafe', paddingTop: 10 }}>
-                      <div style={{ fontWeight: 700, color: '#4b5563', marginBottom: 4 }}>⚠️ Ambiguity alerts:</div>
-                      <ul style={{ margin: 0, paddingLeft: 16 }}>
-                        {c.ambiguity_detection.map((amb, i) => (
-                          <li key={i} style={{ marginBottom: 2 }}>{amb}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Hiring Summary */}
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>AI Hiring Summary</div>
-                <HiringSummaryCard candidate={c} />
-              </div>
-
-              {/* ── SKILLS BREAKDOWN ── */}
-              <div className="card">
-                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 600 }}>Skills Breakdown</h3>
-
-                {/* 1. Required Skills from JD */}
-                <SkillSection
-                  icon=""
-                  title="Required Skills (JD)"
-                  titleColor="#1d4ed8"
-                  skills={jdSkills}
-                  variant="required"
-                  emptyText="No required skills extracted from JD. Re-create the job with a detailed description."
-                />
-
-                {/* 2. Matched Skills */}
-                <SkillSection
-                  icon=""
-                  title="Matched Skills"
-                  titleColor="#15803d"
-                  skills={matchedSkills}
-                  variant="matched"
-                  emptyText={jdSkills.length > 0 ? 'No skills matched.' : null}
-                />
-
-                {/* 3. Missing Skills */}
-                <SkillSection
-                  icon=""
-                  title="Missing Skills"
-                  titleColor="#dc2626"
-                  skills={missingSkills}
-                  variant="missing"
-                />
-
-                {/* 4. All Extracted Skills from Resume */}
-                {allSkills.length > 0 && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                      All Extracted Resume Skills ({allSkills.length})
-                    </div>
-                    <div>
-                      {allSkills.map(s => <SkillChip key={s} skill={s} variant="neutral" />)}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 🤖 AI Resume Feedback — Redesigned for Structured Insights */}
-              <div className="card" style={{ border: '1px solid var(--border)', background: 'linear-gradient(to bottom, #fff, #f8fafc)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
-                  <span style={{ fontSize: 20 }}></span>
-                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>AI Resume Evaluation</h3>
-                </div>
-
-                {c.feedback && typeof c.feedback === 'object' && Object.keys(c.feedback).length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    
-                    {/* Strengths */}
-                    {c.feedback.strengths?.length > 0 && (
-                      <div className="feedback-section">
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#15803d', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Strengths
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {c.feedback.strengths.map((s, i) => (
-                            <div key={i} style={{ fontSize: 13.5, color: 'var(--text-primary)', display: 'flex', gap: 8 }}>
-                              <span style={{ color: '#22c55e' }}>•</span>
-                              <span>{s}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Weaknesses / Gaps */}
-                    {c.feedback.weaknesses?.length > 0 && (
-                      <div className="feedback-section">
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Weaknesses / Gaps
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {c.feedback.weaknesses.map((w, i) => (
-                            <div key={i} style={{ fontSize: 13.5, color: 'var(--text-primary)', display: 'flex', gap: 8 }}>
-                              <span style={{ color: '#ef4444' }}>•</span>
-                              <span>{w}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Technical Assessment */}
-                    {c.feedback.assessment?.length > 0 && (
-                      <div className="feedback-section">
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Technical Assessment
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {c.feedback.assessment.map((a, i) => (
-                            <div key={i} style={{ fontSize: 13.5, color: 'var(--text-primary)', display: 'flex', gap: 8 }}>
-                              <span style={{ color: '#818cf8' }}>•</span>
-                              <span>{a}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Suitability */}
-                    <div style={{ padding: 14, background: '#f0f9ff', borderRadius: 10, border: '1px solid #bae6fd' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 4, textTransform: 'uppercase' }}>
-                        Role Suitability
-                      </div>
-                      <div style={{ fontSize: 13.5, color: '#0c4a6e', fontWeight: 600 }}>
-                        {c.feedback.suitability}
-                      </div>
-                    </div>
-
-                    {/* Verdict */}
-                    <div style={{ marginTop: 4 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>Overall Verdict</div>
-                      <div style={{ 
-                        fontSize: 14, fontStyle: 'italic', color: 'var(--text-primary)', 
-                        padding: '12px 16px', background: '#fff', borderLeft: '4px solid #6366f1', 
-                        borderRadius: '0 8px 8px 0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
-                      }}>
-                        "{c.feedback.verdict}"
-                      </div>
-                    </div>
-
-                  </div>
-                ) : c.feedback && typeof c.feedback === 'string' ? (
-                   /* Handle legacy string feedback if it exists */
-                   <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-primary)' }}>
-                    {c.feedback.split('\n').map((line, i) => {
-                      const isHeader = line.endsWith(':') && !line.startsWith('-');
-                      return (
-                        <p key={i} style={{ 
-                          marginBottom: isHeader ? 8 : 4,
-                          fontWeight: isHeader ? 700 : 400,
-                          color: isHeader ? 'var(--text-primary)' : 'var(--text-secondary)',
-                          fontSize: isHeader ? 14 : 13.5
-                        }}>
-                          {line}
-                        </p>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
-                    Feedback not generated yet. Run ranking first to generate AI insights.
-                  </p>
-                )}
-              </div>
-
-              {/* Education & Experience */}
-              <div className="card">
-                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 600 }}>Background</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Education</div>
-                    {c.education?.length > 0
-                      ? c.education.map(e => <SkillChip key={e} skill={e} variant="neutral" />)
-                      : <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Not detected</span>}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Experience</div>
-                    {/* Red if 0 years, colored by score otherwise */}
-                    <span style={{ fontSize: 22, fontWeight: 800, color: expColor }}>
-                      {expYears}
-                    </span>
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}> years</span>
-                    {expYears <= 0 && (
-                      <div style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>No experience detected</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Interview Preparation */}
-              <InterviewPrepCard candidateId={id} jobId={c.job_id} jobTitle={c.job_title} />
-
-              {/* HR Notes */}
-              <div className="card">
-                <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 600 }}>HR Notes</h3>
-                {c.notes?.length > 0 && (
-                  <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {c.notes.map((n, i) => (
-                      <div key={i} style={{ padding: '8px 12px', background: 'var(--bg-secondary)', borderRadius: 8, fontSize: 13 }}>
-                        <div style={{ color: 'var(--text-secondary)', fontSize: 11, marginBottom: 2 }}>
-                          {n.author} · {n.created_at?.slice(0, 10)}
-                        </div>
-                        <div>{n.text}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <form onSubmit={addNote} style={{ display: 'flex', gap: 8 }}>
-                  <input className="form-input" style={{ flex: 1 }}
-                    placeholder="Add a note…" value={note}
-                    onChange={e => setNote(e.target.value)} />
-                  <button type="submit" className="btn btn-primary btn-sm" disabled={savingNote}>
-                    <MdSend />
-                  </button>
-                </form>
-              </div>
+          {/* Quick stage transition drop-down + actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '0 8px', height: 32 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>STAGE:</span>
+              <select
+                value={c.status || 'applied'}
+                onChange={e => updateStatus(e.target.value)}
+                style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 12, fontWeight: 600, color: '#334155', cursor: 'pointer' }}
+              >
+                <option value="applied">Applied</option>
+                <option value="screening">Screening</option>
+                <option value="shortlisted">Shortlisted</option>
+                <option value="interview_scheduled">Interview</option>
+                <option value="interview_completed">Completed</option>
+                <option value="offered">Offered</option>
+                <option value="hired">Hired</option>
+                <option value="rejected">Rejected</option>
+              </select>
             </div>
 
-            {/* ── RIGHT COLUMN ── */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <button className="btn btn-outline btn-sm" onClick={() => setShowInterview(true)}>
+              <MdCalendarToday /> Schedule
+            </button>
 
-              {/* Actions */}
-              <div className="card">
-                <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 600 }}>Actions</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <button className="btn btn-outline" style={{ justifyContent: 'center' }}
-                    onClick={() => updateStatus('applied')}>
-                    Mark as Applied
-                  </button>
-                  <button className="btn btn-outline" style={{ justifyContent: 'center' }}
-                    onClick={() => updateStatus('screening')}>
-                    Mark as Screening
-                  </button>
-                  <button className="btn btn-success" style={{ justifyContent: 'center' }}
-                    onClick={() => updateStatus('shortlisted')}>
-                    <MdThumbUp /> Shortlist Candidate
-                  </button>
-                  <button className="btn btn-info" style={{ justifyContent: 'center' }}
-                    onClick={() => setShowInterview(true)}>
-                    <MdCalendarToday /> Schedule Interview
-                  </button>
-                  <button className="btn btn-purple" style={{ justifyContent: 'center' }}
-                    onClick={() => updateStatus('offered')}>
-                    <MdCheckCircle /> Mark as Offered
-                  </button>
-                  <button className="btn btn-success" style={{ justifyContent: 'center', background: '#059669', color: '#fff', borderColor: '#059669' }}
-                    onClick={() => updateStatus('hired')}>
-                    <MdCheckCircle /> Mark as Hired
-                  </button>
-                  <button className="btn btn-danger" style={{ justifyContent: 'center' }}
-                    onClick={() => updateStatus('rejected')}>
-                    <MdThumbDown /> Reject Candidate
-                  </button>
-                </div>
+            {c.interview && (c.interview.status === 'completed' || c.status === 'interview_completed' || c.status === 'interview_analyzed') && (
+              <button className="btn btn-outline btn-sm" onClick={downloadReport}>
+                Download PDF
+              </button>
+            )}
 
-                <button className="btn btn-outline" style={{ justifyContent: 'center', borderColor: 'var(--danger)', color: 'var(--danger)', marginTop: 8 }}
-                    onClick={() => {
-                      if (window.confirm('Are you sure you want to delete this candidate?')) {
-                        API.delete(`/candidates/${id}`).then(() => {
-                          toast.success('Candidate deleted');
-                          navigate(-1);
-                        }).catch((err) => {
-                          console.error(err);
-                          toast.error('Failed to delete candidate');
-                        });
-                      }
-                    }}>
-                    <MdDelete /> Delete Candidate
-                  </button>
-                </div>
+            <button 
+              className="btn btn-danger btn-sm"
+              onClick={() => {
+                if (window.confirm('Delete this candidate permanently?')) {
+                  API.delete(`/candidates/${id}`).then(() => {
+                    toast.success('Candidate deleted');
+                    navigate('/candidates');
+                  }).catch(() => toast.error('Failed to delete candidate'));
+                }
+              }}
+            >
+              Delete
+            </button>
+
+          </div>
+        </div>
+
+        {/* Tabbed Candidate Layout */}
+        <div style={{ display: 'grid', gridTemplateColumns: '3fr 1.1fr', gap: 24, padding: 32, flex: 1, overflowY: 'auto' }}>
+          
+          {/* LEFT AREA: Tabs & Dynamic Panel */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            
+            {/* Lever-style tabs */}
+            <div className="ent-tabs">
+              {[
+                { id: 'overview', label: 'Overview', icon: <MdPerson /> },
+                { id: 'resume', label: 'Resume File', icon: <MdArticle /> },
+                { id: 'match', label: 'AI Match Analysis', icon: <MdLayers /> },
+                { id: 'skills', label: 'Skills Alignment', icon: <MdListAlt /> },
+                { id: 'interview', label: 'Interview Reports', icon: <MdCalendarToday /> },
+              ].map(t => (
+                <button
+                  key={t.id}
+                  className={`ent-tab ${activeTab === t.id ? 'active' : ''}`}
+                  onClick={() => setActiveTab(t.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  {t.icon}
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* TAB PANELS */}
+            
+            {/* Tab 1: Overview */}
+            {activeTab === 'overview' && (
+              <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 
-                {/* Activity History */}
-                <div className="card">
-                  <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 600 }}>Activity History</h3>
-                  {c.activity_history?.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
-                      {/* Vertical line connecting timeline dots */}
-                      <div style={{ position: 'absolute', top: 8, bottom: 8, left: 5, width: 2, background: '#e2e8f0', zIndex: 0 }} />
-                      
-                      {/* Sort history descending (newest first) */}
+                {/* Profile Meta Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                  <div className="ent-card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Contact Email</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>{c.email}</div>
+                  </div>
+                  <div className="ent-card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Phone Number</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>{c.phone || 'N/A'}</div>
+                  </div>
+                  <div className="ent-card" style={{ padding: 16 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Experience Experience</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a', marginTop: 4 }}>{expYears} Years</div>
+                  </div>
+                </div>
+
+                {/* Recruiter Activity Timeline */}
+                <div className="ent-card">
+                  <div className="ent-card-header">
+                    <span className="ent-card-title">Candidate Activity Log</span>
+                  </div>
+                  {c.activity_history && c.activity_history.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, position: 'relative', paddingLeft: 12 }}>
+                      <div style={{ position: 'absolute', top: 6, bottom: 6, left: 16, width: 1.5, background: '#e2e8f0' }} />
                       {[...c.activity_history].reverse().map((act, i) => (
-                        <div key={i} style={{ display: 'flex', gap: 12, position: 'relative', zIndex: 1 }}>
-                          <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#6366f1', border: '2px solid #fff', marginTop: 4, flexShrink: 0 }} />
+                        <div key={i} style={{ display: 'flex', gap: 16, position: 'relative' }}>
+                          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#4f46e5', border: '2px solid #fff', marginTop: 4, zIndex: 1, boxShadow: '0 0 0 3px rgba(79,70,229,0.1)' }} />
                           <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{act.action}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                              {act.author || 'System'} · {new Date(act.timestamp).toLocaleString(undefined, {
-                                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                              })}
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{act.action}</div>
+                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                              Performed by <b>{act.author || 'System'}</b> · {new Date(act.timestamp).toLocaleString()}
                             </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>No recent activity.</p>
+                    <div style={{ textAlign: 'center', padding: 24, color: '#94a3b8', fontSize: 12 }}>No activity recorded yet.</div>
                   )}
                 </div>
 
-                <ResumePreview id={id} filename={c.filename} />
+              </div>
+            )}
 
-                {/* Interview Details */}
-                {c.interview && (
-                  <div className="card">
-                    <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 600 }}>Interview Details</h3>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 14 }}>
-                      <div><span style={{ color: 'var(--text-secondary)' }}>Date: </span><b>{c.interview.date}</b></div>
-                      <div><span style={{ color: 'var(--text-secondary)' }}>Time: </span><b>{c.interview.time}</b></div>
-                      <div><span style={{ color: 'var(--text-secondary)' }}>Mode: </span>
-                        <SkillChip skill={c.interview.mode} variant="neutral" />
+            {/* Tab 2: Resume Preview */}
+            {activeTab === 'resume' && (
+              <div className="ent-card animate-fade">
+                <ResumePreview id={id} filename={c.filename} />
+              </div>
+            )}
+
+            {/* Tab 3: AI Match Analysis */}
+            {activeTab === 'match' && (
+              <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                
+                <div className="ent-card" style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
+                  <div style={{
+                    width: 110, height: 110, borderRadius: '50%',
+                    background: `conic-gradient(${ringColor} ${overall * 3.6}deg, #f1f5f9 0deg)`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    boxShadow: `0 0 0 8px ${ringColor}12`,
+                  }}>
+                    <div style={{ width: 86, height: 86, borderRadius: '50%', background: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: 26, fontWeight: 900, color: ringColor }}>{overall}%</span>
+                      <span style={{ fontSize: 9, color: '#64748b', fontWeight: 700 }}>AI MATCH</span>
+                    </div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>AI Match Recommendation</h3>
+                    <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.5, marginTop: 4 }}>
+                      {c.recruiter_explanation || (overall >= 75 ? 'Strong recommendation for hire based on skill matches and domain semantic relevance.' : overall >= 50 ? 'Recommended for next-stage screening. Candidate matches key core competencies but lacks a few optional skill components.' : 'Candidate fails to meet core requirements. Penalty points applied due to significant skill gap.')}
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                  <div className="ent-card">
+                    <div className="ent-card-title" style={{ marginBottom: 16 }}>Score Breakdown</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <ScoreBar label="Skills Fit" score={c.skills_score !== undefined ? c.skills_score : c.skill_score} tooltip="Core required skill coverage" />
+                      <ScoreBar label="Experience Depth" score={c.experience_score} tooltip="Candidate experience vs. required years" />
+                      <ScoreBar label="Semantic Similarity" score={c.semantic_score} tooltip="Contextual overlap between resume and description" />
+                      <ScoreBar label="Projects Score" score={c.projects_score !== undefined ? c.projects_score : c.project_score} tooltip="Assessed projects matching JD" />
+                      <ScoreBar label="Certifications Score" score={c.certification_score !== undefined ? c.certification_score : c.cert_score} tooltip="Extra credits for required certifications" />
+                    </div>
+                  </div>
+
+                  <div className="ent-card">
+                    <div className="ent-card-title" style={{ marginBottom: 16 }}>Extracted Credentials</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 4 }}>Extracted Projects</div>
+                        {projectsList.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {projectsList.map((p, i) => <div key={i} style={{ fontSize: 12, color: '#334155' }}>• {p}</div>)}
+                          </div>
+                        ) : <span style={{ fontSize: 12, color: '#94a3b8' }}>None detected</span>}
                       </div>
-                      {c.interview.location && (
-                        <div><span style={{ color: 'var(--text-secondary)' }}>Location: </span>{c.interview.location}</div>
-                      )}
-                      {c.interview.meeting_link && (
-                        c.interview.status === 'completed' || c.status === 'interview_completed' || c.status === 'interview_analyzed' ? (
-                          <div style={{ marginTop: 8, padding: 12, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                            <div style={{ marginBottom: 10, fontWeight: 700, color: '#475569', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span>Interview Completed</span>
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <button className="btn btn-outline btn-sm" style={{ flex: 1, fontSize: 11, fontWeight: 700 }} onClick={() => {
-                                  const card = document.getElementById('ai-analysis-card');
-                                  if (card) {
-                                    card.scrollIntoView({ behavior: 'smooth' });
-                                  } else {
-                                    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-                                  }
-                                }}>
-                                  View Analysis
-                                </button>
-                                <button className="btn btn-outline btn-sm" style={{ flex: 1, fontSize: 11, fontWeight: 700 }} onClick={() => setShowRecording(!showRecording)}>
-                                  {showRecording ? 'Hide Player' : 'View Recording'}
-                                </button>
-                              </div>
-                              <button className="btn btn-primary btn-sm" style={{ width: '100%', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={downloadReport}>
-                                Download Report
-                              </button>
-                              <button className="btn btn-outline btn-sm" style={{ width: '100%', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => setShowTranscriptModal(true)}>
-                                View Transcript
-                              </button>
-                            </div>
+
+                      <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 4 }}>Extracted Certifications</div>
+                        {certsList.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {certsList.map((cr, i) => <div key={i} style={{ fontSize: 12, color: '#334155' }}>• {cr}</div>)}
+                          </div>
+                        ) : <span style={{ fontSize: 12, color: '#94a3b8' }}>None detected</span>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* Tab 4: Skills Alignment */}
+            {activeTab === 'skills' && (
+              <div className="ent-card animate-fade">
+                <div className="ent-card-title" style={{ marginBottom: 16 }}>Skills Breakdown</div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#16a34a', marginBottom: 8 }}>✅ MATCHED SKILLS ({exactMatches.length + semanticMatches.length + partialMatches.length})</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {exactMatches.map(s => <SkillChip key={s} skill={s} variant="matched" />)}
+                      {semanticMatches.map(s => <SkillChip key={s} skill={s} variant="matched" />)}
+                      {partialMatches.map(s => <SkillChip key={s} skill={s} variant="matched" />)}
+                    </div>
+                  </div>
+
+                  {missingSkills.length > 0 && (
+                    <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#dc2626', marginBottom: 8 }}>❌ MISSING SKILLS ({missingSkills.length})</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {missingSkills.map(s => <SkillChip key={s} skill={s} variant="missing" />)}
+                      </div>
+                    </div>
+                  )}
+
+                  {bonusSkills.length > 0 && (
+                    <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#0891b2', marginBottom: 8 }}>💎 BONUS SKILLS ({bonusSkills.length})</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {bonusSkills.map(s => <SkillChip key={s} skill={s} variant="neutral" />)}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#475569', marginBottom: 8 }}>ALL EXTRACTED SKILLS ({c.skills?.length || 0})</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {(c.skills || []).map(s => <SkillChip key={s} skill={s} variant="neutral" />)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 5: Interview Reports */}
+            {activeTab === 'interview' && (
+              <div className="animate-fade" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                
+                {/* Scheduling Details */}
+                {c.interview ? (
+                  <div className="ent-card">
+                    <div className="ent-card-header">
+                      <span className="ent-card-title">Interview Session Details</span>
+                      <span className={`badge badge-${c.interview.status || 'scheduled'}`}>
+                        {(c.interview.status || 'scheduled').toUpperCase()}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, fontSize: 13, color: '#334155' }}>
+                      <div>
+                        <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700 }}>DATE & TIME</div>
+                        <div style={{ marginTop: 4, fontWeight: 600 }}>{c.interview.date} at {c.interview.time}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: '#64748b', fontSize: 11, fontWeight: 700 }}>INTERVIEW MODE</div>
+                        <div style={{ marginTop: 4, fontWeight: 600 }}>{c.interview.mode?.toUpperCase()}</div>
+                      </div>
+                    </div>
+
+                    {c.interview.meeting_link && (
+                      <div style={{ marginTop: 16, borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+                        {c.interview.status === 'completed' || c.status === 'interview_completed' || c.status === 'interview_analyzed' ? (
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button className="btn btn-primary btn-sm" onClick={() => setShowTranscriptModal(true)}>
+                              View Full Transcript
+                            </button>
+                            <button className="btn btn-outline btn-sm" onClick={() => setShowRecording(!showRecording)}>
+                              {showRecording ? 'Hide Waveform' : 'Play Audio Recording'}
+                            </button>
                           </div>
                         ) : (
-                          isMissed ? (
-                            <div style={{ marginTop: 8, padding: 12, background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
-                              <div style={{ marginBottom: 6, fontWeight: 700, color: '#991b1b', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>Missed Interview</span>
+                          <div>
+                            {isMissed ? (
+                              <div style={{ padding: 12, background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca', color: '#b91c1c' }}>
+                                <b>Missed Session:</b> The scheduled slot has expired. Please reschedule.
                               </div>
-                              <div style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5 }}>
-                                The scheduled interview slot has expired (limit was 15 minutes past {c.interview.time}). You can no longer start this interview.
-                              </div>
-                            </div>
-                          ) : (() => {
-                            const meetingLink = c.interview?.meeting_link || '';
-                            const directJitsiUrl = meetingLink;
-
-                            return (
-                              <div style={{ marginTop: 8, padding: 12, background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                                <div style={{ marginBottom: 8, fontWeight: 600, color: '#166534', fontSize: 13 }}>Video Interview Ready</div>
-                                
-                                <button className="btn btn-success btn-sm" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }} onClick={startInterview}>
-                                  Launch Secure Interview Room
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                <button className="btn btn-success btn-sm" onClick={startInterview}>
+                                  Launch Video Monitor Room
                                 </button>
-
-                                <div style={{ borderTop: '1px solid #bbf7d0', marginTop: 10, paddingTop: 10 }}>
-                                  <div style={{ fontSize: 11, fontWeight: 700, color: '#166534', marginBottom: 6 }}>Candidate Portal Invite</div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    <div style={{ display: 'flex', gap: 4 }}>
-                                      <input 
-                                        type="text" 
-                                        readOnly 
-                                        value={directJitsiUrl} 
-                                        style={{ flex: 1, fontSize: 11, padding: '6px 10px', border: '1px solid #bbf7d0', borderRadius: 6, background: '#fff', color: '#1e293b' }} 
-                                        onClick={(e) => e.target.select()}
-                                      />
-                                      <button 
-                                        className="btn btn-outline btn-sm" 
-                                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', borderColor: '#bbf7d0', color: '#166534', fontWeight: 600, fontSize: 12 }}
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(directJitsiUrl);
-                                          toast.success('Direct Jitsi link copied!');
-                                        }}
-                                        title="Copy Link"
-                                      >
-                                        <MdContentCopy size={14} /> Copy Link
-                                      </button>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 8 }}>
-                                      <button 
-                                        className="btn btn-outline btn-sm" 
-                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#fff', borderColor: '#bbf7d0', color: '#166534', fontWeight: 600, fontSize: 12 }}
-                                        onClick={() => {
-                                          window.open(`mailto:${c.email}?subject=Your Interview Link for ${c.job_title || 'Software Engineer'}&body=Hi ${c.name},%0D%0A%0D%0APlease join your interview session using the following direct link: %0D%0A${directJitsiUrl}%0D%0A%0D%0ABest regards,%0D%0ARecruiting Team`);
-                                        }}
-                                      >
-                                        <MdEmail size={14} /> Email Invite
-                                      </button>
-                                      <button 
-                                        className="btn btn-outline btn-sm" 
-                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#fff', borderColor: '#bbf7d0', color: '#166534', fontWeight: 600, fontSize: 12 }}
-                                        onClick={() => {
-                                          window.open(`https://api.whatsapp.com/send?text=Hi ${c.name}, please join your interview here: ${encodeURIComponent(directJitsiUrl)}`);
-                                        }}
-                                      >
-                                        <MdShare size={14} /> WhatsApp Invite
-                                      </button>
-                                    </div>
-                                  </div>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <input 
+                                    className="form-input" 
+                                    readOnly 
+                                    value={c.interview.meeting_link} 
+                                    style={{ flex: 1, fontSize: 12, height: 32 }} 
+                                  />
+                                  <button 
+                                    className="btn btn-outline btn-sm" 
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(c.interview.meeting_link);
+                                      toast.success('Interview link copied');
+                                    }}
+                                  >
+                                    Copy Link
+                                  </button>
                                 </div>
                               </div>
-                            );
-                          })()
-                          )
-                        )
-                      }
-
-                      {/* Premium Mock Video Recording Player */}
-                      {showRecording && (
-                        <div style={{ marginTop: 12, padding: 16, background: '#0f172a', borderRadius: 12, border: '1px solid #334155', color: '#fff' }} className="animate-fade">
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                            <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🎥 Recorded Session</span>
-                            <span style={{ fontSize: 10, background: '#ef4444', color: '#fff', padding: '2px 6px', borderRadius: 4, fontWeight: 800 }}>ARCHIVED</span>
+                            )}
                           </div>
-                          
-                          {/* Visual Waveform mockup to show audio capture */}
-                          <div style={{ height: 60, background: 'rgba(30, 41, 59, 0.5)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 8, border: '1px solid #1e293b', marginBottom: 12 }}>
-                            {[20, 40, 15, 60, 80, 45, 90, 30, 70, 50, 25, 60, 40, 85, 30, 20, 50, 75, 40, 95, 20, 60, 45, 80, 35, 10, 30, 50].map((h, i) => (
-                              <div
-                                key={i}
-                                style={{
-                                  width: 3,
-                                  height: `${h}%`,
-                                  background: 'linear-gradient(to top, #6366f1, #818cf8)',
-                                  borderRadius: 2,
-                                  animation: `pulseWave ${1 + Math.random()}s ease-in-out infinite alternate`
-                                }}
-                              />
-                            ))}
-                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="ent-card" style={{ padding: 24, textAlign: 'center', color: '#64748b' }}>
+                    <div style={{ fontSize: 13, marginBottom: 12 }}>No interview has been scheduled for this candidate.</div>
+                    <button className="btn btn-primary btn-sm" onClick={() => setShowInterview(true)}>
+                      Schedule Video Interview
+                    </button>
+                  </div>
+                )}
 
-                          <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span>Track: Candidate + Screen Share</span>
-                            <span>Duration: {c.interview.duration_seconds ? `${Math.round(c.interview.duration_seconds / 60)}m ${Math.round(c.interview.duration_seconds % 60)}s` : 'N/A'}</span>
-                          </div>
-
-                          <style>{`
-                            @keyframes pulseWave {
-                              0% { transform: scaleY(0.4); opacity: 0.5; }
-                              100% { transform: scaleY(1); opacity: 1; }
-                            }
-                          `}</style>
-                        </div>
-                      )}
-
-                      {isInterviewing && (
-                        <div style={{ marginTop: 8, padding: 10, background: '#eff6ff', borderRadius: 8, border: '1px solid #bfdbfe', fontSize: 12, color: '#1e40af' }}>
-                          Interview session is live. Use the Interview Room to monitor.
-                        </div>
-                      )}
-
-                      {c.interview.notes && (
-                        <div style={{ marginTop: 4 }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Notes: </span>{c.interview.notes}
-                        </div>
-                      )}
+                {/* Simulated Wave Player */}
+                {showRecording && (
+                  <div className="ent-card animate-fade" style={{ background: '#0f172a', border: '1px solid #1e293b', color: '#ffffff' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>AUDIO PLAYBACK</span>
+                      <span style={{ fontSize: 9, background: '#22c55e', color: '#fff', padding: '1px 4px', borderRadius: 4 }}>READY</span>
+                    </div>
+                    <div style={{ height: 50, background: 'rgba(30,41,59,0.5)', display: 'flex', alignItems: 'center', gap: 2, padding: 8, borderRadius: 6 }}>
+                      {[25,45,15,65,75,40,90,20,50,60,30,80,40,20,10,35,55,75,45,95,30,60,40,75,20,10].map((h, i) => (
+                        <div key={i} style={{ width: 3, height: `${h}%`, background: '#6366f1', borderRadius: 2 }} />
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* AI Interview Analysis */}
-                <InterviewInsightCard candidate={c} />
+                {/* Behavioral AI Feedback Card */}
+                {c.ai_analysis && (
+                  <div className="ent-card">
+                    <div className="ent-card-title" style={{ marginBottom: 16 }}>AI Behavioral Assessment</div>
+                    <InterviewInsightCard candidate={c} />
+                  </div>
+                )}
 
-              </div> {/* Close Right Column */}
-            </div> {/* Close Grid */}
-          </div> {/* Close Page Body */}
-        </div> {/* Close Main Content */}
+              </div>
+            )}
 
-        {showInterview && (
-          <InterviewModal
-            candidate={c}
-            onClose={() => setShowInterview(false)}
-            onSuccess={fetchCandidate}
-          />
-        )}
+          </div>
 
-        {showTranscriptModal && (
-          <TranscriptModal
-            candidate={c}
-            onClose={() => setShowTranscriptModal(false)}
-          />
-        )}
-      </div> // Close Layout
+          {/* RIGHT COLUMN: Candidate Contact & Recruiter Comments */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            
+            {/* Quick Profile Summary Card */}
+            <div className="ent-card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Profile Info</h3>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13, color: '#475569' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdLocationOn style={{ color: '#94a3b8' }} /> {c.location || 'Remote'}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdEmail style={{ color: '#94a3b8' }} /> {c.email}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdPhone style={{ color: '#94a3b8' }} /> {c.phone || 'No phone'}
+                </div>
+              </div>
+
+              {c.education && c.education.length > 0 && (
+                <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 6 }}>Education</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {c.education.map((e, idx) => <span key={idx} style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 8px', borderRadius: 4, color: '#475569' }}>{e}</span>)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Recruiter Notes Block */}
+            <div className="ent-card" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="ent-card-header" style={{ marginBottom: 12 }}>
+                <span className="ent-card-title">Recruiter Comments</span>
+                <MdChatBubble size={16} style={{ color: '#94a3b8' }} />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 300, overflowY: 'auto', marginBottom: 12 }}>
+                {c.notes && c.notes.length > 0 ? c.notes.map((n, i) => (
+                  <div key={i} style={{ padding: '8px 10px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12.5 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color: '#64748b' }}>{n.author}</span>
+                      <span>{n.created_at?.slice(0, 10)}</span>
+                    </div>
+                    <div style={{ color: '#1e293b' }}>{n.text}</div>
+                  </div>
+                )) : (
+                  <div style={{ padding: '16px 0', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>No notes added.</div>
+                )}
+              </div>
+
+              <form onSubmit={addNote} style={{ display: 'flex', gap: 6 }}>
+                <input 
+                  className="form-input" 
+                  style={{ flex: 1, height: 32, fontSize: 12, borderRadius: 6 }}
+                  placeholder="Type note..." 
+                  value={note}
+                  onChange={e => setNote(e.target.value)} 
+                />
+                <button type="submit" className="btn btn-primary btn-sm" style={{ height: 32, padding: '0 10px' }} disabled={savingNote}>
+                  <MdSend size={14} />
+                </button>
+              </form>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      {showInterview && (
+        <InterviewModal
+          candidate={c}
+          onClose={() => setShowInterview(false)}
+          onSuccess={fetchCandidate}
+        />
+      )}
+
+      {showTranscriptModal && (
+        <TranscriptModal
+          candidate={c}
+          onClose={() => setShowTranscriptModal(false)}
+        />
+      )}
+
+    </div>
   );
 }

@@ -1,0 +1,24 @@
+# Post-Fix Reranking Audit Table (Top 20 Candidates)
+
+| Candidate | Final Score | Skills Score | Experience Score | Semantic Score | Projects Score | Certification Score | Penalty Applied | Final Verdict |
+|---|---|---|---|---|---|---|---|---|
+| Srigdkk | 41.23 | 36.36 | 88.60 | 57.66 | 0.00 | 100.00 | >50% required skills missing (-12.0) | Weak Match |
+| Gopi Suresh | 38.66 | 36.36 | 82.30 | 52.69 | 0.00 | 100.00 | >50% required skills missing (-12.0) | Poor Match |
+| SHYAMLEE BHAMBORE | 33.29 | 27.27 | 97.00 | 65.66 | 0.00 | 100.00 | >70% required skills missing (-20.0) | Poor Match |
+| MOHIT KUMAR | 30.19 | 27.27 | 90.70 | 58.04 | 0.00 | 100.00 | >70% required skills missing (-20.0) | Poor Match |
+| Skiran | 30.08 | 18.18 | 100.00 | 64.06 | 0.00 | 100.00 | >70% required skills missing (-20.0) | Poor Match |
+| Vinodtechie | 29.69 | 27.27 | 86.50 | 60.80 | 0.00 | 100.00 | >70% required skills missing (-20.0) | Poor Match |
+| Mukul | 28.52 | 27.27 | 86.50 | 54.94 | 0.00 | 100.00 | >70% required skills missing (-20.0) | Poor Match |
+| Kumar Singh | 24.31 | 18.18 | 99.10 | 61.33 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Poor Match |
+| JAYASHREE SWARNAKAR | 24.11 | 27.27 | 94.90 | 47.36 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Poor Match |
+| ARCHANA DEVATE JOSHI | 23.43 | 18.18 | 100.00 | 55.78 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Poor Match |
+| SUDHAKAR S | 23.32 | 18.18 | 100.00 | 55.26 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Poor Match |
+| Prasamit Kalita | 22.27 | 18.18 | 100.00 | 50.00 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Poor Match |
+| VENUGOPAL KRISHNAPPA | 21.04 | 18.18 | 100.00 | 43.83 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Poor Match |
+| Suman Bachu | 20.81 | 18.18 | 97.00 | 46.43 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Poor Match |
+| HARSHIT SHARMA | 20.00 | 27.27 | 78.10 | 47.81 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Not Suitable |
+| ANEESH ATREYA | 19.79 | 9.09 | 88.60 | 70.00 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Not Suitable |
+| Babu Rao Talwar | 18.96 | 18.18 | 76.00 | 63.46 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Not Suitable |
+| Vineeth Venkatesh | 18.94 | 18.18 | 71.80 | 68.61 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Not Suitable |
+| Shshnirkhey | 17.87 | 18.18 | 82.30 | 50.09 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Not Suitable |
+| Hemachandra | 17.36 | 9.09 | 82.30 | 65.76 | 0.00 | 0.00 | >70% required skills missing (-20.0) | Not Suitable |
