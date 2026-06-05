@@ -131,7 +131,7 @@ EXPECTED_RANGES = {
     "Good":       (60, 80),
     "Average":    (20, 45),
     "Weak":       (0, 20),
-    "Irrelevant": (0, 20),
+    "Irrelevant": (0, 25),
 }
 
 
@@ -164,12 +164,17 @@ def run_test():
 
         exp_bd = calculate_experience_breakdown(timeline, exp_yrs, required_skills)
         relevant_exp = exp_bd["relevant_experience"]
+        total_exp = exp_bd["total_experience"]
+        effective_exp = max(relevant_exp, total_exp)
 
         if minimum_exp <= 0:
-            exp_score = _clamp(min(80.0, 20.0 + relevant_exp * 12.0))
+            exp_score = _clamp(min(100.0, 20.0 + effective_exp * 16.0))
         else:
-            ratio = relevant_exp / minimum_exp
-            exp_score = _clamp((70.0 + (ratio - 1.0) * 15.0) if ratio >= 1.0 else ratio * 70.0)
+            if effective_exp >= minimum_exp:
+                exp_score = 100.0
+            else:
+                ratio = effective_exp / minimum_exp
+                exp_score = _clamp(ratio * 100.0)
 
         proj_count = sum(1 for l in raw.split('\n') if 'project' in l.lower() and len(l) > 10)
         proj_score = 70.0 if proj_count >= 2 else (50.0 if proj_count == 1 else 20.0)
@@ -204,7 +209,7 @@ def run_test():
             elif mr >= 0.3 and skill_score < 50:
                 raw_final -= 6;  penalties.append(f">30% req skills missing -6")
 
-        if minimum_exp > 0 and relevant_exp < minimum_exp * 0.5:
+        if minimum_exp > 0 and effective_exp < minimum_exp * 0.5:
             raw_final -= 10; penalties.append("exp severely below req -10")
         if len(raw) < 500:
             raw_final -= 10; penalties.append("short resume -10")

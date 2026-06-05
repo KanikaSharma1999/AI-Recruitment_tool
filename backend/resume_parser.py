@@ -279,6 +279,10 @@ BANNED_WORDS = {
     "education", "skills", "projects", "achievements", "references",
     "professional", "personal", "technical", "work", "employment",
     "history", "background", "information", "about", "page",
+    "address", "phone", "email", "mobile", "brand", "marketing",
+    "india", "bengaluru", "bangalore", "pune", "mumbai", "chennai",
+    "delhi", "hyderabad", "kolkata", "singapore", "remote", "hiring",
+    "recruitment", "portfolio", "linkedin", "github"
 }
 
 CERTIFICATION_KEYWORDS = [
@@ -341,87 +345,167 @@ def is_valid_name(candidate: str) -> bool:
         return False
     if not all(w.isalpha() for w in words):
         return False
-    if not all(w[0].isupper() for w in words):
-        return False
-    if candidate == candidate.upper():
-        return False
-    if candidate == candidate.lower():
-        return False
+    # Filter out common sections, headers, roles and location words
     if any(w.lower() in BANNED_WORDS for w in words):
         return False
     return True
 
 
+def clean_extracted_email(email: str) -> str:
+    if email == "Not Found":
+        return email
+    # Match the email pattern where the TLD is co/in/com/org/net etc.
+    match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|mil|co|in|info|biz|me|us|uk|ca|de|fr|jp)\b', email, re.IGNORECASE)
+    if match:
+        return match.group(0)
+    # Fallback to any 2-4 letter TLD
+    match2 = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}\b', email)
+    if match2:
+        return match2.group(0)
+    # If no word boundary, match up to capitalized transition (e.g. gmail.comMANALI)
+    match3 = re.match(r'^([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|co|in|info|biz|me|us))([A-Z].*)', email)
+    if match3:
+        return match3.group(1)
+    # Generic fallback
+    match4 = re.match(r'^([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4})', email)
+    if match4:
+        return match4.group(1)
+    return email
+
+
 def extract_candidate_details(raw_text: str, filename: str) -> dict:
     """Multi-strategy name/email/phone extraction."""
     nlp = get_nlp()
+    
+    # 1. Extract Email Robustly (handling spaces in PDF text)
+    email = "Not Found"
     email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', raw_text)
-    email = email_match.group(0) if email_match else "Not Found"
+    if email_match:
+        email = clean_extracted_email(email_match.group(0))
+    else:
+        at_idx = raw_text.find('@')
+        if at_idx != -1:
+            start = max(0, at_idx - 50)
+            end = min(len(raw_text), at_idx + 50)
+            chunk = raw_text[start:end]
+            cleaned_chunk = re.sub(r'\s+', '', chunk)
+            email_match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', cleaned_chunk)
+            if email_match:
+                email = clean_extracted_email(email_match.group(0))
 
     email_username = ""
     if email != "Not Found":
         raw_username = email.split("@")[0]
         email_username = re.sub(r'[^a-z]', '', raw_username.lower())
 
-    phone_match = re.search(r'(\+?\d{1,3}[.\-\s]?)?\d{10}', raw_text)
-    phone = phone_match.group(0) if phone_match else "Not Found"
+    # 2. Extract Phone Robustly
+    phone = "Not Found"
+    phone_candidates = re.findall(r'(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b', raw_text)
+    if phone_candidates:
+        cleaned_ph = re.sub(r'[\s\-\(\)\+]', '', phone_candidates[0])
+        if len(cleaned_ph) >= 10:
+            phone = phone_candidates[0].strip()
+    if phone == "Not Found":
+        first_part = raw_text[:1500]
+        digits_only = re.sub(r'[^\d]', '', first_part)
+        m = re.search(r'[6789]\d{9}', digits_only)
+        if m:
+            phone = m.group(0)
+        else:
+            m2 = re.search(r'\d{10}', digits_only)
+            if m2:
+                phone = m2.group(0)
 
+    # 3. Name Extraction helper
     def email_cross_check(candidate: str) -> bool:
-        if not email_username:
+        if not email_username or len(email_username) < 3:
             return True
         name_tokens = [w.lower() for w in candidate.split()]
+        # Check initials
+        initials = "".join(w[0] for w in name_tokens if w)
+        if initials in email_username or email_username in initials:
+            return True
         return any(
             token in email_username or email_username.startswith(token[:3])
             for token in name_tokens if len(token) >= 3
         )
 
-    def try_name(candidate: str) -> Optional[str]:
+    def try_name(candidate: str, require_email: bool = False) -> Optional[str]:
         candidate = ' '.join(candidate.split())
+        candidate = re.sub(r'[^a-zA-Z\s]', '', candidate).strip()
         candidate = ' '.join(w.capitalize() for w in candidate.split())
-        if is_valid_name(candidate) and email_cross_check(candidate):
-            return candidate
+        if is_valid_name(candidate):
+            if not require_email or email_cross_check(candidate):
+                return candidate
         return None
 
+    # Pre-process lines: Merge adjacent single-word lines
     lines = raw_text.split('\n')
     first_30 = [l.strip() for l in lines[:30] if l.strip()]
+    merged_lines = []
+    i = 0
+    while i < len(first_30):
+        line = first_30[i]
+        words = line.split()
+        if len(words) == 1 and i + 1 < len(first_30):
+            next_line = first_30[i+1].strip()
+            next_words = next_line.split()
+            if len(next_words) == 1:
+                merged_line = f"{line} {next_line}"
+                merged_lines.append(merged_line)
+                i += 2
+                continue
+        merged_lines.append(line)
+        i += 1
+
     name = None
 
-    for line in first_30[:3]:
-        result = try_name(line)
+    # Strategy 1: First 3 non-empty merged lines (bypass email check initially)
+    for line in merged_lines[:3]:
+        words = line.lower().split()
+        if any(w in BANNED_WORDS for w in words):
+            continue
+        result = try_name(line, require_email=False)
         if result:
             name = result
             break
 
-    if not name and email != "Not Found":
-        email_line_idx = None
-        for idx, raw_line in enumerate(lines[:30]):
-            if email in raw_line:
-                email_line_idx = idx
-                break
-        if email_line_idx is not None:
-            for raw_line in lines[max(0, email_line_idx - 5): email_line_idx]:
-                result = try_name(raw_line.strip())
-                if result:
-                    name = result
-                    break
-
-    if not name and nlp:
-        doc = nlp(raw_text[:2000])
-        for ent in doc.ents:
-            if ent.label_ == "PERSON":
-                result = try_name(ent.text)
-                if result:
-                    name = result
-                    break
-
+    # Strategy 2: First 30 lines with email check
     if not name:
-        for line in first_30:
-            cleaned = re.sub(r'^(name\s*[:|-]?\s*)', '', line, flags=re.IGNORECASE).strip()
-            result = try_name(cleaned)
+        for line in merged_lines[:15]:
+            words = line.lower().split()
+            if any(w in BANNED_WORDS for w in words):
+                continue
+            result = try_name(line, require_email=True)
             if result:
                 name = result
                 break
 
+    # Strategy 3: Check around email line
+    if not name and email != "Not Found":
+        email_line_idx = None
+        for idx, raw_line in enumerate(lines[:30]):
+            if email in raw_line or (email_username and email_username in raw_line.lower()):
+                email_line_idx = idx
+                break
+        if email_line_idx is not None:
+            for raw_line in lines[max(0, email_line_idx - 5): email_line_idx]:
+                result = try_name(raw_line.strip(), require_email=False)
+                if result:
+                    name = result
+                    break
+
+    # Strategy 4: spaCy PERSON entity
+    if not name and nlp:
+        doc = nlp(raw_text[:2000])
+        for ent in doc.ents:
+            if ent.label_ == "PERSON":
+                result = try_name(ent.text, require_email=False)
+                if result:
+                    name = result
+                    break
+
+    # Fallback to email username or filename
     if not name:
         if email != "Not Found":
             raw_username = email.split("@")[0]
@@ -430,6 +514,12 @@ def extract_candidate_details(raw_text: str, filename: str) -> dict:
             name = ' '.join(parts[:2]) if parts else os.path.splitext(filename)[0].replace('_', ' ').strip()
         else:
             name = os.path.splitext(filename)[0].replace('_', ' ').strip()
+
+    # Final cleanup of candidate name: if it's purely digits or numeric-like, use filename stem
+    if re.match(r'^\d+$', name):
+        name = os.path.splitext(filename)[0].replace('_', ' ').strip()
+        if re.match(r'^\d+$', name):
+            name = "Candidate Profile"
 
     return {"name": name, "email": email, "phone": phone}
 
@@ -539,18 +629,25 @@ def extract_experience_years(text: str) -> float:
     """
     3-Stage Hybrid Experience Extraction:
     Stage 1: Professional Summary section scan (highest priority)
-    Stage 2: Work history date range aggregation
-    Stage 3: AI/NLP fallback via Cohere
+    Stage 2: Work history date range aggregation (supporting 2-digit and 4-digit years)
+    Stage 3: AI/NLP fallback via Cohere / local fallback
     Returns 0.0 ONLY if candidate is confirmed fresher.
     """
     current_year = datetime.datetime.now().year
 
+    # Helper to clean/convert 2-digit or 4-digit year string
+    def clean_year(yr_str: str) -> int:
+        yr = int(re.search(r'\d+', yr_str).group())
+        if yr < 100:
+            if yr < 80:
+                return 2000 + yr
+            else:
+                return 1900 + yr
+        return yr
+
     # ──────────────────────────────────────────────────────────────────
     # STAGE 1: Scan Professional Summary / About / Profile sections FIRST
-    # This catches "9 years of comprehensive experience" type statements
     # ──────────────────────────────────────────────────────────────────
-    
-    # Extract dedicated summary sections (top 40% of resume)
     top_section = text[:int(len(text) * 0.4)]
     
     # Also try to extract named sections
@@ -574,14 +671,14 @@ def extract_experience_years(text: str) -> float:
         r'experience\s*(?:of\s+|:\s*)(\d+(?:\.\d+)?)\s*\+?\s*years?',
         # "9 years experience" (no 'of')
         r'(\d+(?:\.\d+)?)\s*\+?\s*years?\s+experience',
-        # "9+ years in software/tech/data/AI"
-        r'(\d+(?:\.\d+)?)\s*\+?\s*years?\s+in\s+(?:the\s+)?(?:software|it|tech|data|ml|ai|telecom|finance|banking|healthcare|manufacturing)',
+        # "9+ years in software/tech/data/AI/MarCom etc."
+        r'(\d+(?:\.\d+)?)\s*\+?\s*years?\s+in\s+(?:the\s+)?(?:software|it|tech|data|ml|ai|telecom|finance|banking|healthcare|manufacturing|marcom|marketing|sales|branding|event)',
         # "X yrs experience"
         r'(\d+(?:\.\d+)?)\s*\+?\s*yrs?\s+(?:of\s+)?experience',
         # "experience: X" or "total experience: X years"
         r'(?:total\s+)?experience\s*[:：]\s*(\d+(?:\.\d+)?)\s*\+?\s*years?',
-        # "with X years of" (common in summaries)
-        r'with\s+(\d+(?:\.\d+)?)\s*\+?\s*years?\s+of',
+        # "with X years of / in" (common in summaries)
+        r'with\s+(\d+(?:\.\d+)?)\s*\+?\s*years?\s+(?:of|in)',
         # "over X years" / "more than X years"
         r'(?:over|more\s+than|approximately|around|nearly)\s+(\d+(?:\.\d+)?)\s*\+?\s*years?',
     ]
@@ -595,15 +692,13 @@ def extract_experience_years(text: str) -> float:
 
     # ──────────────────────────────────────────────────────────────────
     # STAGE 2: Work History Timeline Aggregation
-    # Parse date ranges and sum durations
+    # Parse date ranges and sum durations (supporting 2-digit and 4-digit years)
     # ──────────────────────────────────────────────────────────────────
-    
-    # Match: "2015 - 2020", "Jan 2018 – Present", "2021 to Current", etc.
     date_patterns = [
-        # Full month+year to month+year or present
-        r'(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*(20\d\d|19\d\d)\s*[-–—to]+\s*(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*)?(20\d\d|19\d\d|present|current|till\s*date|now|ongoing)',
+        # Full month+year to month+year or present (supporting 2-digit or 4-digit years)
+        r'\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*,?\s*(\d{2,4})\s*[-–—to]+\s*(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*,?\s*)?(\d{2,4}|present|current|till\s*date|now|ongoing)\b',
         # Year to year
-        r'(20\d\d|19\d\d)\s*[-–—to]+\s*(20\d\d|19\d\d|present|current|till\s*date|now|ongoing)',
+        r'\b((?:19|20)\d{2})\s*[-–—to]+\s*((?:19|20)\d{2}|present|current|till\s*date|now|ongoing)\b',
     ]
     
     seen_ranges = set()
@@ -615,8 +710,11 @@ def extract_experience_years(text: str) -> float:
             start_str = groups[-2] if len(groups) >= 2 else groups[0]
             end_str = groups[-1]
             try:
-                s = int(re.search(r'\d{4}', start_str).group())
-                e = current_year if re.search(r'present|current|till|now|ongoing', end_str, re.IGNORECASE) else int(re.search(r'\d{4}', end_str).group())
+                s = clean_year(start_str)
+                if re.search(r'present|current|till|now|ongoing', end_str, re.IGNORECASE):
+                    e = current_year
+                else:
+                    e = clean_year(end_str)
                 key = (s, e)
                 if key not in seen_ranges and 1980 <= s <= current_year and s <= e:
                     seen_ranges.add(key)
@@ -630,7 +728,6 @@ def extract_experience_years(text: str) -> float:
 
     # ──────────────────────────────────────────────────────────────────
     # STAGE 3: AI/NLP Fallback via Cohere
-    # Only reached if Stages 1+2 both failed
     # ──────────────────────────────────────────────────────────────────
     api_key = os.getenv("COHERE_API_KEY", "")
     if api_key and api_key not in ("your_cohere_key", ""):

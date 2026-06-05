@@ -6,8 +6,7 @@ import StatusBadge from '../components/StatusBadge';
 import InterviewModal from '../components/InterviewModal';
 import API from '../api/client';
 import toast from 'react-hot-toast';
-import { MdSearch, MdVisibility, MdThumbUp, MdThumbDown, MdCalendarToday, MdCheckCircle, MdFilterList, MdDownload, MdDelete, MdViewList, MdViewKanban } from 'react-icons/md';
-import KanbanBoard from '../components/KanbanBoard';
+import { MdSearch, MdVisibility, MdThumbUp, MdThumbDown, MdCalendarToday, MdCheckCircle, MdFilterList, MdDownload, MdDelete } from 'react-icons/md';
 
 const STATUSES = [
   { value: 'All', label: 'All' },
@@ -25,7 +24,6 @@ export default function Candidates() {
   const [candidates, setCandidates] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('pipeline');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [jobFilter, setJobFilter] = useState('');
@@ -78,7 +76,11 @@ export default function Candidates() {
   };
 
   const downloadReport = async (fmt) => {
-    const params = jobFilter ? `?format=${fmt}&job_id=${jobFilter}` : `?format=${fmt}`;
+    if (!jobFilter) {
+      toast.error('Please select a specific job posting from the dropdown to export candidates.');
+      return;
+    }
+    const params = `?format=${fmt}&job_id=${jobFilter}`;
     const r = await API.get(`/report/download${params}`, { responseType: 'blob' });
     const url = URL.createObjectURL(r.data);
     const a = document.createElement('a');
@@ -86,6 +88,31 @@ export default function Candidates() {
     a.download = `candidates_report.${fmt}`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleGoogleSheetsExport = async () => {
+    if (!jobFilter) {
+      toast.error('Please select a specific job posting from the dropdown to export candidates.');
+      return;
+    }
+    const loadingToast = toast.loading('Exporting report for Google Sheets...');
+    try {
+      const params = `?format=csv&job_id=${jobFilter}`;
+      const r = await API.get(`/report/download${params}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `candidates_report.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      toast.success('CSV downloaded! Opening Google Sheets...', { id: loadingToast, duration: 4000 });
+      setTimeout(() => {
+        window.open('https://sheets.new', '_blank');
+      }, 1000);
+    } catch {
+      toast.error('Failed to export to Google Sheets', { id: loadingToast });
+    }
   };
 
   // Scores are stored as 0-100 in MongoDB
@@ -171,7 +198,7 @@ export default function Candidates() {
         <div className="page-body animate-fade">
           <div className="flex-between page-header">
             <div>
-              <h1>Candidate Pipeline</h1>
+              <h1>Candidates Directory</h1>
               <p>{candidates.length} candidates found</p>
             </div>
             <div style={{ display:'flex', gap:10 }}>
@@ -179,10 +206,24 @@ export default function Candidates() {
               <button className="btn btn-outline btn-sm" onClick={() => navigate('/compare')}>Compare</button>
               <button className="btn btn-outline btn-sm" onClick={() => downloadReport('csv')}><MdDownload /> CSV</button>
               <button className="btn btn-outline btn-sm" onClick={() => downloadReport('pdf')}><MdDownload /> PDF</button>
-              <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
-                <button className={`btn btn-sm ${viewMode === 'list' ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: 0, border: 'none' }} onClick={() => setViewMode('list')} title="List View"><MdViewList size={18} /></button>
-                <button className={`btn btn-sm ${viewMode === 'pipeline' ? 'btn-primary' : 'btn-ghost'}`} style={{ borderRadius: 0, border: 'none' }} onClick={() => setViewMode('pipeline')} title="Pipeline View"><MdViewKanban size={18} /></button>
-              </div>
+              <button 
+                className="btn btn-outline btn-sm" 
+                onClick={handleGoogleSheetsExport}
+                style={{ 
+                  borderColor: '#107c41', 
+                  color: '#107c41', 
+                  background: '#f3faf5',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                  <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-6 2h5v3h-5V5zm-5 0h3v3H8V5zM8 10h3v3H8v-3zm0 5h3v3H8v-3zm5 3v-3h5v3h-5zm0-5v-3h5v3h-5z"/>
+                </svg>
+                Google Sheets
+              </button>
             </div>
           </div>
 
@@ -221,8 +262,6 @@ export default function Candidates() {
             </div>
           </div>
 
-          {/* Table or Pipeline */}
-          {viewMode === 'list' ? (
           <div className="card" style={{ padding:0, overflow:'hidden' }}>
             <div className="table-wrapper" style={{ border:'none', borderRadius:0 }}>
               {loading ? (
@@ -344,15 +383,6 @@ export default function Candidates() {
               )}
             </div>
           </div>
-          ) : (
-            <div style={{ height: 'calc(100vh - 240px)' }}>
-              {loading ? (
-                <div style={{ padding:40, textAlign:'center' }}><div className="spinner" style={{ margin:'0 auto' }} /></div>
-              ) : (
-                <KanbanBoard candidates={candidates} onStatusChange={updateStatus} />
-              )}
-            </div>
-          )}
         </div>
       </div>
 

@@ -23,18 +23,36 @@ def generate_csv_report(candidates: list) -> str:
     writer.writerow(["Rank", "Name", "Email", "Phone", "Score", "Skill Match",
                      "Experience (yrs)", "Status", "Matched Skills", "Missing Skills", "Feedback"])
     for i, c in enumerate(candidates, 1):
+        score_val = c.get("score")
+        score_str = f"{score_val:.1f}%" if isinstance(score_val, (int, float)) else "0.0%"
+        
+        skill_val = c.get("skill_score")
+        skill_str = f"{skill_val:.1f}%" if isinstance(skill_val, (int, float)) else "0.0%"
+        
+        exp_val = c.get("experience_years")
+        exp_str = f"{exp_val:.1f}" if isinstance(exp_val, (int, float)) else "0.0"
+        
+        matched_skills = c.get("matched_skills") or []
+        matched_str = ", ".join(matched_skills) if isinstance(matched_skills, list) else ""
+        
+        missing_skills = c.get("missing_skills") or []
+        missing_str = ", ".join(missing_skills) if isinstance(missing_skills, list) else ""
+        
+        feedback_val = c.get("feedback") or ""
+        feedback_str = feedback_val.replace("\n", " | ") if isinstance(feedback_val, str) else ""
+
         writer.writerow([
             i,
-            c.get("name", ""),
-            c.get("email", ""),
-            c.get("phone", ""),
-            f"{c.get('score', 0):.1f}%",
-            f"{c.get('skill_score', 0):.1f}%",
-            c.get("experience_years", 0),
-            c.get("status", ""),
-            ", ".join(c.get("matched_skills", [])),
-            ", ".join(c.get("missing_skills", [])),
-            c.get("feedback", "").replace("\n", " | "),
+            c.get("name", "") or "",
+            c.get("email", "") or "",
+            c.get("phone", "") or "",
+            score_str,
+            skill_str,
+            exp_str,
+            c.get("status", "") or "",
+            matched_str,
+            missing_str,
+            feedback_str,
         ])
     return output.getvalue()
 
@@ -65,15 +83,22 @@ def generate_pdf_report(candidates: list) -> bytes:
 
     data = header
     for i, c in enumerate(candidates, 1):
-        matched = ", ".join(c.get("matched_skills", [])[:4])
-        if len(c.get("matched_skills", [])) > 4:
+        matched_list = c.get("matched_skills") or []
+        if not isinstance(matched_list, list):
+            matched_list = []
+        matched = ", ".join(matched_list[:4])
+        if len(matched_list) > 4:
             matched += "…"
+            
+        score_val = c.get("score")
+        score_str = f"{score_val:.0f}%" if isinstance(score_val, (int, float)) else "0%"
+        
         data.append([
             str(i),
-            c.get("name", "")[:22],
-            c.get("email", "")[:26],
-            f"{c.get('score', 0):.0f}%",
-            c.get("status", "Applied"),
+            (c.get("name", "") or "")[:22],
+            (c.get("email", "") or "")[:26],
+            score_str,
+            c.get("status", "Applied") or "Applied",
             matched[:30],
         ])
 
@@ -115,10 +140,13 @@ def generate_pdf_report(candidates: list) -> bytes:
                                   spaceBefore=8, spaceAfter=2)
 
     for i, c in enumerate(candidates, 1):
+        score_val = c.get("score")
+        score_str = f"{score_val:.1f}%" if isinstance(score_val, (int, float)) else "0.0%"
         elements.append(Paragraph(
-            f"{i}. {c.get('name', 'N/A')} — Score: {c.get('score', 0):.1f} | {c.get('status', '')}",
+            f"{i}. {c.get('name', 'N/A') or 'N/A'} — Score: {score_str} | {c.get('status', '') or ''}",
             label_style))
-        fb = c.get("feedback", "No feedback available.").replace("\n", "<br/>")
+        fb = c.get("feedback") or "No feedback available."
+        fb = fb.replace("\n", "<br/>") if isinstance(fb, str) else "No feedback available."
         elements.append(Paragraph(fb, body_style))
 
     doc.build(elements)

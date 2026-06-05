@@ -29,6 +29,7 @@ from typing import List, Tuple, Dict
 
 from services.llm_parser import (
     parse_resume_with_llm, parse_jd_with_llm,
+    generate_candidate_intelligence,
     get_groq_client, safe_json_loads,
     _set_groq_rate_limited, _is_groq_rate_limited
 )
@@ -178,8 +179,8 @@ def compute_skill_scores(required_skills: List[str],
     - If no required skills listed AND candidate has <3 skills → 30
     - If no required skills listed AND candidate has skills → 60 (not 100)
     - Exact match  = 1.0 credit
-    - Semantic ≥0.78 = 0.6 credit  (raised from 0.72, reduced credit from 0.70)
-    - Partial ≥0.55 = 0.3 credit   (raised from 0.50, reduced credit from 0.40)
+    - Semantic ≥0.72 = 0.70 credit  (original thresholds restored)
+    - Partial ≥0.50 = 0.40 credit   (original thresholds restored)
     - Fuzzy  ≥80    = 0.25 credit
     - Every missing REQUIRED skill subtracts additional penalty from final
     """
@@ -215,9 +216,9 @@ def compute_skill_scores(required_skills: List[str],
                     sim = util.cos_sim(req_emb, cand_emb)
                     for ri, rsk in enumerate(req_list):
                         max_sim = float(sim[ri].max())
-                        if max_sim >= 0.78:          # raised from 0.72
+                        if max_sim >= 0.72:          # original threshold
                             semantic_matches.append(rsk)
-                        elif max_sim >= 0.55:        # raised from 0.50
+                        elif max_sim >= 0.50:        # original threshold
                             partial_matches.append(rsk)
             except Exception as e:
                 logger.warning(f"[Matching] Semantic match failed: {e}")
@@ -237,8 +238,8 @@ def compute_skill_scores(required_skills: List[str],
     n = len(req_set)
     credit = (
         len(exact_set) * 1.00
-        + len(semantic_matches) * 0.60    # reduced from 0.70
-        + len(partial_matches) * 0.30     # reduced from 0.40
+        + len(semantic_matches) * 0.70    # original weight restored
+        + len(partial_matches) * 0.40     # original weight restored
     )
     raw_score = (credit / n) * 100
 
@@ -263,25 +264,25 @@ def compute_skill_scores(required_skills: List[str],
 def compute_semantic_similarity(jd_text: str, resume_text: str) -> float:
     """
     Cosine similarity between JD and resume embeddings.
-    Returns 0-100 but SCALED DOWN: raw cosine * 70 so max is ~70
-    to prevent semantic score dominating the final score.
+    Returns 0-100 using full cosine range mapped to percentage.
+    Higher JD/resume overlap → higher score.
     """
     if not jd_text or not resume_text:
-        return 30.0
+        return 40.0
     model = get_model()
     if not model:
-        return 40.0
+        return 50.0
     try:
         from sentence_transformers import util
         emb_jd  = model.encode([jd_text[:3000]], convert_to_tensor=True)
         emb_res = model.encode([resume_text[:3000]], convert_to_tensor=True)
         cos = float(util.cos_sim(emb_jd, emb_res)[0][0])
-        # Map cosine [0,1] → score [0,70] instead of [0,100]
-        score = _clamp(cos * 70.0, 10.0, 70.0)
+        # Full cosine range: map [0,1] → [0,100]
+        score = _clamp(cos * 100.0, 10.0, 100.0)
         return round(score, 2)
     except Exception as e:
         logger.warning(f"[Matching] Semantic similarity failed: {e}")
-        return 35.0
+        return 45.0
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +429,14 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
 
         try:
             # ── Step 1: Extract candidate profile ──────────────────────
-            if "employment_timeline" not in candidate or not candidate.get("employment_timeline"):
+            timeline = candidate.get("employment_timeline", [])
+            is_dummy = False
+            if timeline and len(timeline) == 1:
+                t_item = timeline[0]
+                if isinstance(t_item, dict) and t_item.get("company") == "Previous Employment" and t_item.get("title") == "Professional Role":
+                    is_dummy = True
+
+            if "employment_timeline" not in candidate or not timeline or is_dummy:
                 candidate_profile = parse_resume_with_llm(raw_text, filename)
             else:
                 candidate_profile = {
@@ -436,7 +444,7 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                     "total_experience_years": candidate.get("experience_years", 0.0),
                     "companies":              candidate.get("companies", []),
                     "job_titles":             candidate.get("job_titles", []),
-                    "technical_skills":       candidate.get("skills", []),
+                    "technical_skills":       candidate.get("technical_skills") or candidate.get("skills", []),
                     "soft_skills":            candidate.get("soft_skills", []),
                     "certifications":         candidate.get("certifications", []),
                     "education":              candidate.get("education", []),
@@ -451,6 +459,12 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                     "ambiguity_detection":    candidate.get("ambiguity_detection", []),
                     "extraction_reliability": candidate.get("extraction_reliability", "Medium"),
                     "email":                  candidate.get("email", ""),
+                    "summary_or_objective":   candidate.get("summary_or_objective", ""),
+                    "languages_spoken":       candidate.get("languages_spoken", []),
+                    "awards_achievements":    candidate.get("awards_achievements", []),
+                    "github_url":             candidate.get("github_url", ""),
+                    "linkedin_url":           candidate.get("linkedin_url", ""),
+                    "portfolio_url":          candidate.get("portfolio_url", ""),
                 }
 
             if not raw_text or not raw_text.strip():
@@ -468,24 +482,34 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
             relevant_exp = exp_breakdown["relevant_experience"]
 
             # ── Step 3: SKILLS (40%) ────────────────────────────────────
+            cand_skills_list = []
+            if candidate_profile.get("technical_skills"):
+                cand_skills_list.extend(candidate_profile.get("technical_skills", []))
+            if candidate_profile.get("soft_skills"):
+                cand_skills_list.extend(candidate_profile.get("soft_skills", []))
+            if not cand_skills_list and candidate_profile.get("skills"):
+                cand_skills_list.extend(candidate_profile.get("skills", []))
+            cand_skills_list = list(set([s for s in cand_skills_list if s]))
+
             skill_score, exact, semantic_m, partial, missing = compute_skill_scores(
                 required_skills,
-                candidate_profile.get("technical_skills", []),
+                cand_skills_list,
             )
             skills_weight = skill_score * 0.40
 
             # ── Step 4: EXPERIENCE (25%) ────────────────────────────────
+            effective_exp = max(relevant_exp, total_exp)
             if minimum_exp <= 0:
                 # No explicit requirement — score based on what they have
-                # 0 yrs → 20, 1 yr → 40, 3 yrs → 65, 5+ yrs → 80
-                exp_score = _clamp(min(80.0, 20.0 + relevant_exp * 12.0))
+                # 0 yrs → 20, 1 yr → 40, 3 yrs → 65, 5+ yrs → 100
+                exp_score = _clamp(min(100.0, 20.0 + effective_exp * 16.0))
             else:
-                ratio = relevant_exp / minimum_exp
-                if ratio >= 1.0:
-                    exp_score = _clamp(70.0 + (ratio - 1.0) * 15.0, 0, 100)
+                if effective_exp >= minimum_exp:
+                    exp_score = 100.0
                 else:
-                    # Candidate is short on experience — hard penalty
-                    exp_score = _clamp(ratio * 70.0)          # e.g. half exp → 35
+                    # Candidate is short on experience
+                    ratio = effective_exp / minimum_exp
+                    exp_score = _clamp(ratio * 100.0)
             exp_weight = exp_score * 0.25
 
             # ── Step 5: SEMANTIC SIMILARITY (15%) ──────────────────────
@@ -500,7 +524,11 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                 project_score = 70.0 if len(cand_projs) >= 2 else (
                     50.0 if len(cand_projs) == 1 else 20.0)   # was 100 / 70
             else:
-                matched_p = [p for p in cand_projs if any(r.lower() in p.lower() for r in proj_reqs)]
+                matched_p = []
+                for p in cand_projs:
+                    p_str = p.get("name", "") if isinstance(p, dict) else str(p)
+                    if any(str(r).lower() in p_str.lower() for r in proj_reqs):
+                        matched_p.append(p)
                 project_score = _clamp((len(matched_p) / len(proj_reqs)) * 100)
             proj_weight = project_score * 0.10
 
@@ -510,7 +538,11 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
             if not cert_reqs:
                 cert_score = 65.0 if cand_certs else 40.0     # was 100 / 70
             else:
-                matched_c = [c for c in cand_certs if any(r.lower() in c.lower() for r in cert_reqs)]
+                matched_c = []
+                for c in cand_certs:
+                    c_str = c.get("name", "") if isinstance(c, dict) else str(c)
+                    if any(str(r).lower() in c_str.lower() for r in cert_reqs):
+                        matched_c.append(c)
                 cert_score = _clamp((len(matched_c) / len(cert_reqs)) * 100)
             cert_weight = cert_score * 0.05
 
@@ -548,10 +580,10 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                     raw_final -= deduct
 
             # P2: Experience far below requirement
-            if minimum_exp > 0 and relevant_exp < minimum_exp * 0.5:
+            if minimum_exp > 0 and effective_exp < minimum_exp * 0.5:
                 raw_final -= 10
                 global_penalties.append(
-                    f"Experience severely below requirement ({relevant_exp:.1f} vs {minimum_exp:.1f}yrs) -10pts")
+                    f"Experience severely below requirement ({effective_exp:.1f} vs {minimum_exp:.1f}yrs) -10pts")
 
             # P3: Very short resume
             if len(raw_text) < 500:
@@ -566,19 +598,22 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
 
             final_score = _clamp(raw_final)
 
-            # ── Verdict mapping ─────────────────────────────────────────
-            ai_verification = verify_with_recruiter_ai(candidate_profile, jd_profile)
-            if ai_verification and ai_verification.get("recommendation"):
-                ai_verdict = ai_verification["recommendation"]
-            else:
-                ai_verdict = score_to_verdict(final_score)
-                ai_verification = {
-                    "recommendation": ai_verdict,
-                    "reasoning": f"Score-based verdict. Skill coverage: {skill_score:.0f}%, "
-                                 f"Experience: {relevant_exp:.1f}yrs, Semantic: {sem_score:.0f}%.",
-                    "strengths": exact[:3],
-                    "concerns": missing[:3],
-                }
+            # ── Score breakdown for intelligence generation ──────────────
+            score_breakdown_for_intel = {
+                "skill_score":      round(skill_score, 2),
+                "experience_score": round(exp_score, 2),
+                "semantic_score":   round(sem_score, 2),
+                "project_score":    round(project_score, 2),
+                "cert_score":       round(cert_score, 2),
+                "quality_score":    round(quality_score, 2),
+                "final_score":      round(final_score, 2),
+            }
+
+            # ── AI Candidate Intelligence (strengths/weaknesses/risks/opportunities) ──
+            intelligence = generate_candidate_intelligence(
+                candidate_profile, jd_profile, score_breakdown_for_intel
+            )
+            ai_verdict = intelligence.get("recommendation", score_to_verdict(final_score))
 
             # ── Build recruiter explanation ──────────────────────────────
             penalty_text = "; ".join(global_penalties + quality_penalties) or "None"
@@ -591,24 +626,28 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                 recruiter_exp += f" Missing required skills: {', '.join(missing[:5])}."
 
             hiring_summary = {
-                "narrative":    ai_verification.get("reasoning", ""),
-                "strengths":    ai_verification.get("strengths", []),
-                "weaknesses":   ai_verification.get("concerns", []),
-                "recommendation": ai_verdict,
-                "confidence":   candidate_profile.get("extraction_reliability", "Medium"),
-                "generated_at": datetime.datetime.utcnow().isoformat(),
+                "narrative":            intelligence.get("executive_summary", recruiter_exp),
+                "strengths":            intelligence.get("strengths", []),
+                "weaknesses":           intelligence.get("weaknesses", []),
+                "risks":                intelligence.get("risks", []),
+                "opportunities":        intelligence.get("opportunities", []),
+                "interview_focus_areas": intelligence.get("interview_focus_areas", []),
+                "hiring_red_flags":     intelligence.get("hiring_red_flags", []),
+                "hiring_green_flags":   intelligence.get("hiring_green_flags", []),
+                "culture_fit_indicators": intelligence.get("culture_fit_indicators", []),
+                "salary_range_fit":     intelligence.get("salary_range_fit", "Mid"),
+                "onboarding_complexity": intelligence.get("onboarding_complexity", "Medium"),
+                "time_to_productivity": intelligence.get("time_to_productivity", "1-2 weeks"),
+                "recommendation":       ai_verdict,
+                "recommendation_confidence": intelligence.get("recommendation_confidence", "Medium"),
+                "confidence":           candidate_profile.get("extraction_reliability", "Medium"),
+                "generated_at":         datetime.datetime.utcnow().isoformat(),
             }
 
             # ── Score breakdown for UI ───────────────────────────────────
             score_breakdown = {
-                "skill_score":         round(skill_score, 2),
-                "experience_score":    round(exp_score, 2),
-                "semantic_score":      round(sem_score, 2),
-                "project_score":       round(project_score, 2),
-                "cert_score":          round(cert_score, 2),
-                "quality_score":       round(quality_score, 2),
-                "penalties":           global_penalties + quality_penalties,
-                "final_score":         round(final_score, 2),
+                **score_breakdown_for_intel,
+                "penalties": global_penalties + quality_penalties,
             }
 
             print(f"  skill={skill_score:.1f}  exp={exp_score:.1f}  sem={sem_score:.1f}  "
@@ -639,6 +678,17 @@ async def rank_all_resumes(jd_text: str, candidates: list) -> list:
                 "semantic_matches":    semantic_m,
                 "partial_matches":     partial,
                 "bonus_skills":        candidate_profile.get("soft_skills", []),
+                # Structured profile fields (new)
+                "location":            candidate_profile.get("location", ""),
+                "current_title":       candidate_profile.get("current_title", ""),
+                "education_structured": candidate_profile.get("education", []),
+                "projects_structured": candidate_profile.get("projects", []),
+                "summary_or_objective": candidate_profile.get("summary_or_objective", ""),
+                "languages_spoken":    candidate_profile.get("languages_spoken", []),
+                "awards_achievements": candidate_profile.get("awards_achievements", []),
+                "github_url":          candidate_profile.get("github_url", ""),
+                "linkedin_url":        candidate_profile.get("linkedin_url", ""),
+                "portfolio_url":       candidate_profile.get("portfolio_url", ""),
                 # Metadata
                 "confidence_score":    candidate_profile.get("confidence_score", 75.0),
                 "ambiguity_detection": candidate_profile.get("ambiguity_detection", []),

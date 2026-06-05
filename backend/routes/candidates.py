@@ -19,7 +19,53 @@ def serialize(doc: dict) -> dict:
     for key, val in doc.items():
         if isinstance(val, datetime):
             doc[key] = val.isoformat()
+
+    # Normalize array fields that may have been stored as strings or dicts
+    _array_fields = [
+        "skills", "matched_skills", "missing_skills", "exact_matches",
+        "semantic_matches", "partial_matches", "bonus_skills", "risk_flags",
+        "certifications", "education", "projects", "job_titles", "companies",
+        "technical_skills", "soft_skills", "employment_timeline",
+        "ambiguity_detection", "notes", "activity_history",
+    ]
+    for field in _array_fields:
+        val = doc.get(field)
+        if val is None:
+            doc[field] = []
+        elif isinstance(val, str):
+            # Was stored as comma-joined string — split back
+            doc[field] = [s.strip() for s in val.split(",") if s.strip()] if val.strip() else []
+        # dicts/objects stay as-is (e.g. employment_timeline entries)
+
+    # Normalize numeric score fields
+    _score_fields = [
+        "score", "ai_match_score", "skill_score", "skills_score",
+        "experience_score", "experience_relevance", "semantic_score",
+        "technical_fit", "resume_quality", "projects_score",
+        "certification_score", "certifications_score", "confidence_score",
+        "leadership_score", "communication_score", "domain_match_score",
+    ]
+    for field in _score_fields:
+        val = doc.get(field)
+        if val is not None:
+            try:
+                doc[field] = round(float(val), 2)
+            except (TypeError, ValueError):
+                doc[field] = 0.0
+
+    # Normalize hiring_summary — ensure it's a dict not a string
+    hs = doc.get("hiring_summary")
+    if isinstance(hs, str):
+        try:
+            import json
+            doc["hiring_summary"] = json.loads(hs)
+        except Exception:
+            doc["hiring_summary"] = {"narrative": hs}
+    elif hs is None:
+        doc["hiring_summary"] = {}
+
     return doc
+
 
 @router.get("/search")
 async def search_candidates(
@@ -116,6 +162,283 @@ async def list_candidates(
     async for c in candidates_col.find(query).sort("score", -1):
         candidates.append(serialize(c))
     return candidates
+
+@router.post("/rerank/{candidate_id}")
+async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_user)):
+    """Re-run the full LLM extraction + AI intelligence pipeline for one candidate."""
+    import io, datetime
+    from services.llm_parser import parse_resume_with_llm, parse_jd_with_llm, generate_candidate_intelligence
+
+    try:
+        c = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    if not c:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    # ── Load resume file ──────────────────────────────────────────────────────
+    raw_text = c.get("resume_text") or c.get("raw_text") or ""
+
+    if not raw_text:
+        resume_path_val = c.get("resume_path") or c.get("file_path") or c.get("filename")
+        if resume_path_val:
+            from config import UPLOAD_DIR
+            from resume_parser import read_pdf_bytes
+            file_path = UPLOAD_DIR / resume_path_val
+            if not file_path.exists():
+                stripped = resume_path_val.replace("uploads/", "").replace("uploads\\", "")
+                file_path = UPLOAD_DIR / stripped
+            if not file_path.exists():
+                filename = os.path.basename(resume_path_val)
+                search_results = list(UPLOAD_DIR.glob(f"**/{filename}"))
+                if search_results:
+                    file_path = search_results[0]
+            
+            if file_path.exists():
+                try:
+                    with open(file_path, "rb") as f:
+                        content = f.read()
+                    if file_path.suffix.lower() == ".pdf":
+                        raw_text = read_pdf_bytes(content)
+                    else:
+                        raw_text = content.decode("utf-8", errors="ignore")
+                except Exception as e:
+                    print(f"Failed to read file: {e}")
+
+    if not raw_text:
+        raise HTTPException(status_code=422, detail="No resume text available for re-parsing. Please re-upload.")
+
+    filename = c.get("filename", "resume.pdf")
+
+    # ── Re-parse resume with LLM ──────────────────────────────────────────────
+    profile = parse_resume_with_llm(raw_text, filename)
+
+    # ── Load job description ──────────────────────────────────────────────────
+    jd_profile = {}
+    job_doc = None
+    if c.get("job_id"):
+        try:
+            job_doc = await jobs_col.find_one({"_id": ObjectId(c["job_id"])})
+        except Exception:
+            pass
+    if job_doc:
+        jd_text = job_doc.get("description") or job_doc.get("jd_text") or ""
+        if jd_text:
+            jd_profile = parse_jd_with_llm(jd_text)
+        else:
+            jd_profile = {
+                "role_name": job_doc.get("title", ""),
+                "required_skills": job_doc.get("required_skills") or job_doc.get("skills") or [],
+                "preferred_skills": job_doc.get("preferred_skills") or [],
+                "minimum_experience": job_doc.get("experience_required") or 0,
+                "domain_requirements": [],
+            }
+
+    # ── Compute skill matches using matching.py functions ───────────────────
+    from matching import (
+        compute_skill_scores,
+        calculate_experience_breakdown,
+        compute_quality_score,
+        compute_semantic_similarity
+    )
+
+    req_skills = jd_profile.get("required_skills", [])
+    minimum_exp = float(jd_profile.get("minimum_experience", 0.0) or 0.0)
+
+    # ── Skills score (40%) ──
+    cand_tech_skills = profile.get("technical_skills", [])
+    skill_score, exact, semantic_m, partial, missing = compute_skill_scores(
+        req_skills, cand_tech_skills
+    )
+    skills_weight = skill_score * 0.40
+
+    # ── Experience score (25%) ──
+    exp_breakdown = calculate_experience_breakdown(
+        timeline=profile.get("employment_timeline", []),
+        explicit_exp=float(profile.get("total_experience_years") or 0.0),
+        required_skills=req_skills,
+    )
+    total_exp = exp_breakdown["total_experience"]
+    relevant_exp = exp_breakdown["relevant_experience"]
+    effective_exp = max(relevant_exp, total_exp)
+
+    if minimum_exp <= 0:
+        exp_score = round(min(100.0, 20.0 + effective_exp * 16.0), 2)
+    else:
+        if effective_exp >= minimum_exp:
+            exp_score = 100.0
+        else:
+            ratio = effective_exp / minimum_exp
+            exp_score = round(ratio * 100.0, 2)
+    exp_weight = exp_score * 0.25
+
+    # ── Semantic score (15%) ──
+    sem_score = compute_semantic_similarity(jd_text, raw_text)
+    sem_weight = sem_score * 0.15
+
+    # ── Projects score (10%) ──
+    proj_reqs = jd_profile.get("project_requirements", [])
+    cand_projs = profile.get("projects", [])
+    if not proj_reqs:
+        project_score = 70.0 if len(cand_projs) >= 2 else (
+            50.0 if len(cand_projs) == 1 else 20.0)
+    else:
+        matched_p = [p for p in cand_projs if any(r.lower() in p.lower() for r in proj_reqs)]
+        project_score = round((len(matched_p) / max(len(proj_reqs), 1)) * 100, 2)
+    proj_weight = project_score * 0.10
+
+    # ── Certifications score (5%) ──
+    cert_reqs = jd_profile.get("certifications_required", [])
+    cand_certs = profile.get("certifications", [])
+    if not cert_reqs:
+        cert_score = 65.0 if cand_certs else 40.0
+    else:
+        matched_c = [c for c in cand_certs if any(r.lower() in c.lower() for r in cert_reqs)]
+        cert_score = round((len(matched_c) / max(len(cert_reqs), 1)) * 100, 2)
+    cert_weight = cert_score * 0.05
+
+    # ── Quality score (5%) ──
+    quality_score, quality_penalties = compute_quality_score(profile, raw_text)
+    quality_weight = quality_score * 0.05
+
+    # ── Weighted sum ──
+    raw_final = (
+        skills_weight
+        + exp_weight
+        + sem_weight
+        + proj_weight
+        + cert_weight
+        + quality_weight
+    )
+
+    # ── Apply global hard penalties ──
+    global_penalties = []
+    if req_skills:
+        missing_ratio = len(missing) / len(req_skills)
+        if missing_ratio >= 0.7:
+            deduct = 20
+            global_penalties.append(f">70% required skills missing -{deduct}pts")
+            raw_final -= deduct
+        elif missing_ratio >= 0.5:
+            deduct = 12
+            global_penalties.append(f">50% required skills missing -{deduct}pts")
+            raw_final -= deduct
+        elif missing_ratio >= 0.3 and skill_score < 50:
+            deduct = 6
+            global_penalties.append(f">30% required skills missing -{deduct}pts")
+            raw_final -= deduct
+
+    if minimum_exp > 0 and effective_exp < minimum_exp * 0.5:
+        raw_final -= 10
+        global_penalties.append(
+            f"Experience severely below requirement ({effective_exp:.1f} vs {minimum_exp:.1f}yrs) -10pts")
+
+    if len(raw_text) < 500:
+        raw_final -= 10
+        global_penalties.append("Severely incomplete resume (<500 chars) -10pts")
+
+    conf = profile.get("confidence_score", 75.0) or 75.0
+    if conf < 50:
+        raw_final -= 8
+        global_penalties.append(f"Low extraction confidence ({conf:.0f}) -8pts")
+
+    final_score = round(max(0.0, min(100.0, raw_final)), 2)
+
+    score_breakdown = {
+        "skill_score":      round(skill_score, 2),
+        "experience_score": round(exp_score, 2),
+        "semantic_score":   round(sem_score, 2),
+        "project_score":    round(project_score, 2),
+        "cert_score":       round(cert_score, 2),
+        "quality_score":    round(quality_score, 2),
+        "final_score":      round(final_score, 2),
+        "penalties":        global_penalties + quality_penalties,
+    }
+
+    # ── Generate AI intelligence ──────────────────────────────────────────────
+    intelligence = generate_candidate_intelligence(profile, jd_profile, score_breakdown)
+    ai_verdict   = intelligence.get("recommendation", "Hold")
+
+    hiring_summary = {
+        "narrative":               intelligence.get("executive_summary", ""),
+        "strengths":               intelligence.get("strengths", []),
+        "weaknesses":              intelligence.get("weaknesses", []),
+        "risks":                   intelligence.get("risks", []),
+        "opportunities":           intelligence.get("opportunities", []),
+        "interview_focus_areas":   intelligence.get("interview_focus_areas", []),
+        "hiring_red_flags":        intelligence.get("hiring_red_flags", []),
+        "hiring_green_flags":      intelligence.get("hiring_green_flags", []),
+        "culture_fit_indicators":  intelligence.get("culture_fit_indicators", []),
+        "salary_range_fit":        intelligence.get("salary_range_fit", "Mid"),
+        "onboarding_complexity":   intelligence.get("onboarding_complexity", "Medium"),
+        "time_to_productivity":    intelligence.get("time_to_productivity", "1-2 weeks"),
+        "recommendation":          ai_verdict,
+        "recommendation_confidence": intelligence.get("recommendation_confidence", "Medium"),
+        "confidence":              profile.get("extraction_reliability", "Medium"),
+        "generated_at":            datetime.datetime.utcnow().isoformat(),
+    }
+
+    # ── Persist to MongoDB ────────────────────────────────────────────────────
+    update_fields = {
+        # LLM-extracted structured fields
+        "candidate_name":         profile.get("candidate_name", c.get("name")),
+        "name":                   profile.get("candidate_name", c.get("name")),
+        "email":                  profile.get("email") or c.get("email", ""),
+        "phone":                  profile.get("phone") or c.get("phone", ""),
+        "location":               profile.get("location") or c.get("location", ""),
+        "current_title":          profile.get("current_title", ""),
+        "total_experience_years": total_exp,
+        "technical_skills":       profile.get("technical_skills", []),
+        "soft_skills":            profile.get("soft_skills", []),
+        "certifications":         profile.get("certifications", []),
+        "education":              [e.get("degree","") if isinstance(e,dict) else e for e in profile.get("education",[])],
+        "education_structured":   profile.get("education", []),
+        "projects":               [p.get("name","") if isinstance(p,dict) else p for p in profile.get("projects",[])],
+        "projects_structured":    profile.get("projects", []),
+        "employment_timeline":    profile.get("employment_timeline", []),
+        "companies":              profile.get("companies", []),
+        "job_titles":             profile.get("job_titles", []),
+        "github_url":             profile.get("github_url", ""),
+        "linkedin_url":           profile.get("linkedin_url", ""),
+        "portfolio_url":          profile.get("portfolio_url", ""),
+        "languages_spoken":       profile.get("languages_spoken", []),
+        "awards_achievements":    profile.get("awards_achievements", []),
+        "summary_or_objective":   profile.get("summary_or_objective", ""),
+        "confidence_score":       profile.get("confidence_score", 70.0),
+        "ambiguity_detection":    profile.get("ambiguity_detection", []),
+        "extraction_reliability": profile.get("extraction_reliability", "Medium"),
+        # Skill match results
+        "exact_matches":          exact,
+        "semantic_matches":       [],
+        "partial_matches":        [],
+        "matched_skills":         exact,
+        "missing_skills":         missing,
+        "bonus_skills":           bonus,
+        # Updated scores aligned with matching.py
+        "skill_score":            skill_score,
+        "skills_score":           skill_score,
+        "experience_score":       exp_score,
+        "experience_relevance":   exp_score,
+        "resume_quality":         quality_score,
+        "projects_score":         project_score,
+        "certification_score":    cert_score,
+        "certifications_score":   cert_score,
+        "score":                  final_score,
+        "ai_match_score":         final_score,
+        "ai_verdict":             ai_verdict,
+        "hiring_summary":         hiring_summary,
+        "score_breakdown":        score_breakdown,
+        # JD data stored for reference
+        "jd_required_skills":     jd_profile.get("required_skills", []),
+        "jd_preferred_skills":    jd_profile.get("preferred_skills", []),
+        "jd_role_name":           jd_profile.get("role_name", ""),
+        "reparsed_at":            datetime.datetime.utcnow().isoformat(),
+    }
+
+    await candidates_col.update_one({"_id": ObjectId(candidate_id)}, {"$set": update_fields})
+    updated = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
+    return serialize(updated)
+
 
 @router.get("/compare")
 async def compare_candidates(

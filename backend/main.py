@@ -682,6 +682,33 @@ async def upload_resumes(
             "notes": [],
             "interview": None,
             "uploaded_at": datetime.utcnow(),
+            
+            # Upgraded Matching Engine fields
+            "confidence_score":      parsed.get("confidence_score", 75.0),
+            "ambiguity_detection":   parsed.get("ambiguity_detection", []),
+            "extraction_reliability":parsed.get("extraction_reliability", "Medium"),
+            "leadership_match":      "Yes" if parsed.get("leadership_experience") else "No",
+            "communication_match":   "Verified" if parsed.get("communication_indicators") else "Baseline",
+            "recruiter_explanation": "",
+            "ranking_error":         None,
+            "score_breakdown":       {},
+
+            # Structured profile details (for candidate details page)
+            "candidate_name":         parsed.get("candidate_name") or parsed["name"],
+            "current_title":         parsed.get("current_title", ""),
+            "education_structured":  parsed.get("education", []),
+            "projects_structured":   parsed.get("projects", []),
+            "summary_or_objective":  parsed.get("summary_or_objective", ""),
+            "languages_spoken":      parsed.get("languages_spoken", []),
+            "awards_achievements":   parsed.get("awards_achievements", []),
+            "github_url":            parsed.get("github_url", ""),
+            "linkedin_url":          parsed.get("linkedin_url", ""),
+            "portfolio_url":         parsed.get("portfolio_url", ""),
+            "employment_timeline":   parsed.get("employment_timeline", []),
+            "companies":             parsed.get("companies", []),
+            "job_titles":            parsed.get("job_titles", []),
+            "technical_skills":      parsed.get("technical_skills") or parsed["skills"],
+            "soft_skills":           parsed.get("soft_skills", []),
         }
         result = await candidates_col.insert_one(doc)
         cid = str(result.inserted_id)
@@ -807,6 +834,26 @@ async def rank_resumes(
             "recruiter_explanation": item.get("recruiter_explanation", ""),
             "ranking_error":         item.get("ranking_error"),
             "score_breakdown":       item.get("score_breakdown"),
+
+            # Structured profile details (for candidate details page)
+            "location":              item.get("location", ""),
+            "current_title":         item.get("current_title", ""),
+            "education_structured":  item.get("education_structured") or item.get("education", []),
+            "projects_structured":   item.get("projects_structured") or item.get("projects", []),
+            "summary_or_objective":  item.get("summary_or_objective", ""),
+            "languages_spoken":      item.get("languages_spoken", []),
+            "awards_achievements":   item.get("awards_achievements", []),
+            "github_url":            item.get("github_url", ""),
+            "linkedin_url":          item.get("linkedin_url", ""),
+            "portfolio_url":         item.get("portfolio_url", ""),
+            "employment_timeline":   item.get("employment_timeline", []),
+            "companies":             item.get("companies", []),
+            "job_titles":            item.get("job_titles", []),
+            "technical_skills":      item.get("technical_skills", []),
+            "soft_skills":           item.get("soft_skills", []),
+            "certifications":        item.get("certifications", []),
+            "education":             item.get("education", []),
+            "projects":              item.get("projects", []),
         }
 
         res = await candidates_col.update_one(
@@ -1021,6 +1068,26 @@ async def admin_rerank_all(
                 "recruiter_explanation": item.get("recruiter_explanation", ""),
                 "ranking_error":         item.get("ranking_error"),
                 "score_breakdown":       item.get("score_breakdown"),
+
+                # Structured profile details (for candidate details page)
+                "location":              item.get("location", ""),
+                "current_title":         item.get("current_title", ""),
+                "education_structured":  item.get("education_structured") or item.get("education", []),
+                "projects_structured":   item.get("projects_structured") or item.get("projects", []),
+                "summary_or_objective":  item.get("summary_or_objective", ""),
+                "languages_spoken":      item.get("languages_spoken", []),
+                "awards_achievements":   item.get("awards_achievements", []),
+                "github_url":            item.get("github_url", ""),
+                "linkedin_url":          item.get("linkedin_url", ""),
+                "portfolio_url":         item.get("portfolio_url", ""),
+                "employment_timeline":   item.get("employment_timeline", []),
+                "companies":             item.get("companies", []),
+                "job_titles":            item.get("job_titles", []),
+                "technical_skills":      item.get("technical_skills", []),
+                "soft_skills":           item.get("soft_skills", []),
+                "certifications":        item.get("certifications", []),
+                "education":             item.get("education", []),
+                "projects":              item.get("projects", []),
             }
             
             res = await candidates_col.update_one(
