@@ -761,3 +761,54 @@ async def get_interview_by_secure_token(secure_token: str):
         "duration": interview.get("duration", 30),
         "jitsi_domain": os.getenv("JITSI_DOMAIN", "meet.jit.si")
     }
+
+class TokenRequest(BaseModel):
+    candidate_id: str
+
+@router.post("/tokens/recruiter")
+async def get_recruiter_token(
+    req: TokenRequest,
+    current_user=Depends(get_current_user),
+):
+    candidate = await candidates_col.find_one({"_id": ObjectId(req.candidate_id)})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    interview = candidate.get("interview") or {}
+    meeting_link = interview.get("meeting_link")
+    if not meeting_link:
+        raise HTTPException(status_code=400, detail="No interview scheduled or meeting link found")
+        
+    room = meeting_link.split("/")[-1]
+    import os
+    domain = os.getenv("JITSI_DOMAIN", "meet.jit.si")
+    
+    display_name = current_user.get("name") or current_user.get("email") or "Recruiter"
+    
+    return {
+        "room": room,
+        "domain": domain,
+        "display_name": display_name
+    }
+
+@router.post("/tokens/candidate")
+async def get_candidate_token(req: TokenRequest):
+    candidate = await candidates_col.find_one({"_id": ObjectId(req.candidate_id)})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+        
+    interview = candidate.get("interview") or {}
+    meeting_link = interview.get("meeting_link")
+    if not meeting_link:
+        raise HTTPException(status_code=400, detail="No interview scheduled or meeting link found")
+        
+    room = meeting_link.split("/")[-1]
+    import os
+    domain = os.getenv("JITSI_DOMAIN", "meet.jit.si")
+    
+    return {
+        "room": room,
+        "domain": domain,
+        "token": None
+    }
+

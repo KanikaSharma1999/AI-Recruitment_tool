@@ -340,7 +340,24 @@ export default function CandidateProfile() {
                     <div style={{fontSize:11,color:'#64748b'}}>{c.interview.date} · {c.interview.time}</div>
                     <div style={{marginTop:4}}><span className={`cp-risk-pill ${c.interview.status==='completed'?'risk-low':'risk-med'}`} style={{fontSize:10}}>{(c.interview.status||'Scheduled').toUpperCase()}</span></div>
                   </div>
-                  {c.interview.meeting_link && <a href={c.interview.meeting_link} target="_blank" rel="noreferrer" className="cp-footer-btn" style={{textDecoration:'none',fontSize:11.5,display:'flex'}}>🔗 Join Session</a>}
+                  {c.interview.meeting_link && (
+                    <div style={{display:'flex',gap:8,flexDirection:'column'}}>
+                      <a href={`/interview-room/${id}`} target="_blank" rel="noreferrer" className="cp-footer-btn primary" style={{textDecoration:'none',fontSize:11.5,display:'flex',justifyContent:'center',alignItems:'center'}}>🔗 Join Session</a>
+                      {c.interview.secure_token && (
+                        <button 
+                          onClick={() => {
+                            const link = `${window.location.origin}/candidate-interview/${c.interview.secure_token}`;
+                            navigator.clipboard.writeText(link);
+                            toast.success('Candidate invite link copied!');
+                          }}
+                          className="cp-footer-btn"
+                          style={{fontSize:11.5,display:'flex',justifyContent:'center',alignItems:'center',background:'#f1f5f9',color:'#475569',border:'1px solid #cbd5e1'}}
+                        >
+                          📋 Copy Invite Link
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : <div style={{fontSize:12,color:'#94a3b8',fontStyle:'italic',textAlign:'center',padding:'20px 0'}}>No interview scheduled.<br/><button className="cp-footer-btn primary" style={{marginTop:8,fontSize:11.5}} onClick={()=>setShowInterview(true)}>Schedule Now</button></div>}
             </div>
@@ -672,9 +689,24 @@ export default function CandidateProfile() {
                     <div style={{fontSize:12.5,color:'#334155',marginBottom:4}}><b>Time:</b> {c.interview.time}</div>
                     <div style={{fontSize:12.5,color:'#334155',marginBottom:8}}><b>Status:</b> <span className={`cp-risk-pill ${c.interview.status==='completed'?'risk-low':'risk-med'}`} style={{fontSize:10.5,marginLeft:4}}>{(c.interview.status||'Scheduled').toUpperCase()}</span></div>
                     {c.interview.meeting_link && (
-                      <a href={c.interview.meeting_link} target="_blank" rel="noreferrer" className="cp-footer-btn primary" style={{textDecoration:'none',fontSize:12,display:'inline-flex',width:'fit-content',marginTop:6}}>
-                        🔗 Join Live Interview Link
-                      </a>
+                      <div style={{display:'flex',gap:8,marginTop:12}}>
+                        <a href={`/interview-room/${id}`} target="_blank" rel="noreferrer" className="cp-footer-btn primary" style={{textDecoration:'none',fontSize:12,display:'inline-flex',width:'fit-content'}}>
+                          🔗 Join Live Interview Room
+                        </a>
+                        {c.interview.secure_token && (
+                          <button 
+                            onClick={() => {
+                              const link = `${window.location.origin}/candidate-interview/${c.interview.secure_token}`;
+                              navigator.clipboard.writeText(link);
+                              toast.success('Candidate invite link copied!');
+                            }}
+                            className="cp-footer-btn"
+                            style={{fontSize:12,display:'inline-flex',width:'fit-content',background:'#f1f5f9',color:'#475569',border:'1px solid #cbd5e1'}}
+                          >
+                            📋 Copy Candidate Link
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>

@@ -219,8 +219,40 @@ export default function CandidateInterview() {
     };
 
     const handleBlur = () => {
-      if (candidateData) {
-        reportViolation('tab_switch', 'high', 'Candidate switched tabs or lost focus');
+      // Small timeout to allow document.activeElement to update
+      setTimeout(() => {
+        const activeEl = document.activeElement;
+        const jitsiIframe = jitsiContainerRef.current?.querySelector('iframe');
+        
+        // If focus shifted to Jitsi iframe, it's not a tab switch
+        if (activeEl && (activeEl === jitsiIframe || activeEl.tagName === 'IFRAME')) {
+          return;
+        }
+
+        if (candidateData) {
+          reportViolation('tab_switch', 'high', 'Candidate switched tabs or lost focus');
+          API.post('/interviews/face-stats', {
+            candidate_id: candidateData.candidate_id,
+            looking_away_count: 0,
+            no_face_count: 0,
+            multiple_faces_count: 0,
+            tab_switches: 1,
+            copy_paste_count: 0,
+            posture_shift: 0,
+            presence: true,
+            suspicious_events: [{ type: 'tab_switch', time: new Date().toISOString(), detail: 'Candidate switched tabs or lost focus' }],
+            smiling_count: 0,
+            talking_count: 0,
+            anxious_count: 0
+          }).catch(console.error);
+          toast.error('Security alert: Tab switched or window lost focus!');
+        }
+      }, 100);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden && candidateData) {
+        reportViolation('tab_switch', 'high', 'Candidate switched tabs (page hidden)');
         API.post('/interviews/face-stats', {
           candidate_id: candidateData.candidate_id,
           looking_away_count: 0,
@@ -230,12 +262,12 @@ export default function CandidateInterview() {
           copy_paste_count: 0,
           posture_shift: 0,
           presence: true,
-          suspicious_events: [{ type: 'tab_switch', time: new Date().toISOString(), detail: 'Candidate switched tabs or lost focus' }],
+          suspicious_events: [{ type: 'tab_switch', time: new Date().toISOString(), detail: 'Candidate switched tabs (page hidden)' }],
           smiling_count: 0,
           talking_count: 0,
           anxious_count: 0
         }).catch(console.error);
-        toast.error('Security alert: Tab switched or window lost focus!');
+        toast.error('Security alert: Tab switched!');
       }
     };
 
@@ -243,12 +275,14 @@ export default function CandidateInterview() {
     document.addEventListener('paste', handlePaste);
     document.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('blur', handleBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('paste', handlePaste);
       document.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [inCall, candidateData]);
 
@@ -401,6 +435,9 @@ export default function CandidateInterview() {
       return;
     }
 
+    // Request fullscreen immediately synchronously to satisfy user gesture rule
+    requestFullscreen();
+
     setLoading(true);
     try {
       // Release camera preview stream to allow Jitsi to grab the hardware
@@ -416,6 +453,9 @@ export default function CandidateInterview() {
       setInCall(true);
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to authenticate secure session');
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
     } finally {
       setLoading(false);
     }
