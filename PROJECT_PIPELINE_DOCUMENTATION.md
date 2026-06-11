@@ -21,9 +21,10 @@ graph TD
     Auth --> MongoDB[(MongoDB)]
     Jobs --> MongoDB
     Jobs --> FAISS[(FAISS Vector DB)]
-    Resumes --> LocalFS[Local File Storage: /uploads]
-    Resumes --> MongoDB
-    Resumes --> FAISS
+    
+    Resumes --> StorageService[Storage Service: Supabase / S3 / Local Fallback]
+    StorageService --> MongoDB
+    StorageService --> FAISS
     
     Matcher --> Groq[Groq API: Llama-3.3-70b]
     Matcher --> MongoDB
@@ -34,6 +35,7 @@ graph TD
     
     Interviews --> Jitsi[Jitsi Meet Video Bridge]
     Interviews --> Whisper[Whisper API via Groq]
+    Interviews --> StorageService
     Interviews --> MongoDB
     
     Reports --> ReportLab[ReportLab Engine]
@@ -53,19 +55,22 @@ graph TD
 4. **Vector Sync:** Triggers `index_job()` to update the FAISS vector database with sentence-level embeddings.
 
 ### Phase B: Resume Upload & Precision Parsing
-1. **File Upload (backend/main.py):**
+1. **File Upload & Cloud Storage (backend/main.py):**
    * Multiple resumes (PDF/TXT) are sent to `POST /resumes/upload`.
-   * Saved in `./uploads` with a unique hash pattern: `[uuid]_[filename]`.
+   * The backend extracts text in memory for parsing and writes a temporary local file buffer.
+   * **Cloud Upload Integration:** The temporary file is uploaded via `CloudStorageService` to **Supabase Storage** (or AWS S3) if credentials are set in `.env`.
+   * **Local Cleanup:** If uploaded to Supabase or S3, the local copy is instantly deleted to prevent storing physical files on the server.
+   * **Local Fallback:** If cloud configurations are absent, it safely falls back to local storage inside `./uploads/resumes/` and returns the local URL.
 2. **Text Extraction:**
    * **PDF:** Parsed line-by-line using PyPDF `PdfReader`.
    * **TXT:** Read using UTF-8 / CP1252 decoder fallback.
 3. **Multi-Strategy Cascade Parser (backend/resume_parser.py):**
    * **Personal Info Extraction:** Extracts candidate name, email, and phone utilizing regex, spaCy NER (`PERSON` tag), and email-prefix cross-referencing.
-   * **Name Guard System (Recent Fix):** 
+   * **Name Guard System:** 
      * Uses `_LINKEDIN_LINE_RE` and `_JOB_TITLE_RE` to filter out LinkedIn/GitHub artifacts (like "Link Edin") and job titles (like "Marketing Manager", "Edtech Leader") from the name candidates.
      * Prevents short line merging from collapsing invalid names containing email run-ons (e.g., rejecting name candidates containing strings like "shividhamijagmailcom").
    * **Skill Extraction:** Looks up case-insensitive matches against `SKILLS_DB` and handles synonym normalizing. Targets specific skills sections like "Key Skills" or "Areas of Expertise".
-   * **Timeline & Experience (Recent Fix):**
+   * **Timeline & Experience:**
      * **Stage 0 (Highest Priority):** Targets the "Work Experience" / "Professional Experience" section text specifically, parses date ranges, and sums durations.
      * **Stage 1 (Summary Scan):** Scans the Professional Summary section for explicit years statements (e.g. "X+ years of experience").
      * **Stage 2 (Full-text Scan):** Gathers all valid date ranges in the document.
@@ -74,7 +79,7 @@ graph TD
      * Calls Groq (`llama-3.3-70b-versatile` / `llama-3.1-8b-instant`) with 8,000 character context windows.
      * Extracts canonical structure (companies, education, projects, timeline, certifications) with strict JSON output validation.
 4. **Storage:**
-   * Saves candidate document in MongoDB `candidates` collection.
+   * Saves candidate document (storing the Supabase URL or local fallback URL in `resume_path`) in MongoDB `candidates` collection.
    * Updates FAISS index with candidate name/skills/resume text vector embeddings.
 
 ### Phase C: AI Matching, Ranking, & Decisioning
@@ -156,8 +161,9 @@ graph TD
 
 ## 4. Summary of Recent Improvements
 
-1. **Anti-Hallucination Parser Rules:** Fixed issues where LinkedIn markers ("Link Edin") and job titles were incorrectly extracted as candidate names.
-2. **Aggregated Experience Timelines:** Implemented Stage 0 extraction for Work/Professional Experience sections specifically, resolving zero-experience errors on complex formats.
-3. **Bengaluru Fallback Integration:** Unified frontend fallback location to 'Bengaluru' instead of 'Remote'.
-4. **Professional UI Cleanup:** Safely removed all conversational emojis from cards, buttons, and headers across the React source files, creating a sleek, recruiter-first experience.
-5. **SMTP Mail Resilience:** Fixed NameError crashes during uploads and strengthened the email template validation logic.
+1. **Supabase & Cloud Storage Engine:** Upgraded file handling to save interview recordings and candidate resumes directly to Supabase storage buckets (or AWS S3). If cloud uploads succeed, the system automatically purges temporary local files on the server to maintain a zero local disk footprint. Added dynamic RedirectResponses in candidate routes to redirect document requests directly to Supabase.
+2. **Anti-Hallucination Parser Rules:** Fixed issues where LinkedIn markers ("Link Edin") and job titles were incorrectly extracted as candidate names.
+3. **Aggregated Experience Timelines:** Implemented Stage 0 extraction for Work/Professional Experience sections specifically, resolving zero-experience errors on complex formats.
+4. **Bengaluru Fallback Integration:** Unified frontend fallback location to 'Bengaluru' instead of 'Remote'.
+5. **Professional UI Cleanup:** Safely removed all conversational emojis from cards, buttons, and headers across the React source files, creating a sleek, recruiter-first experience.
+6. **SMTP Mail Resilience:** Fixed NameError crashes during uploads and strengthened the email template validation logic.

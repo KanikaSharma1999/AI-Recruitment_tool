@@ -50,10 +50,12 @@ async def schedule_interview(
             detail="This time slot is already booked. Please select a different time."
         )
         
+    import os
     import random
     random_id = random.randint(10000000, 99999999)
     room_name = f"interview-{candidate_id}-{random_id}"
-    meeting_link = f"https://meet.jit.si/{room_name}"
+    jitsi_domain = os.getenv("JITSI_DOMAIN", "meet.jit.si")
+    meeting_link = f"https://{jitsi_domain}/{room_name}"
     
     from services.email_service import send_email, get_interview_scheduled_template
     from database import jobs_col
