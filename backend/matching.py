@@ -397,20 +397,34 @@ def score_to_verdict(score: float) -> str:
 # ---------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ---------------------------------------------------------------------------
-async def rank_all_resumes(jd_text: str, candidates: list) -> list:
+async def rank_all_resumes(jd_text: str, candidates: list, job: dict = None) -> list:
     """
     Anti-inflation enterprise ranking engine.
     Produces realistic score distribution with hard penalties.
     """
     # Parse JD
-    try:
-        jd_profile = parse_jd_with_llm(jd_text)
-    except Exception:
-        jd_profile = {
-            "required_skills": [], "minimum_experience": 0.0,
-            "domain_requirements": [], "project_requirements": [],
-            "certifications_required": [],
-        }
+    jd_profile = None
+    if job:
+        job_required_skills = job.get("required_skills") or job.get("skills") or []
+        if job_required_skills:
+            jd_profile = {
+                "required_skills": job_required_skills,
+                "preferred_skills": job.get("preferred_skills") or [],
+                "minimum_experience": job.get("experience_required") or 0.0,
+                "certifications_required": job.get("certifications_required") or [],
+                "project_requirements": job.get("project_requirements") or [],
+                "domain_requirements": job.get("domain_requirements") or [],
+                "role_name": job.get("title", ""),
+            }
+    if not jd_profile:
+        try:
+            jd_profile = parse_jd_with_llm(jd_text)
+        except Exception:
+            jd_profile = {
+                "required_skills": [], "minimum_experience": 0.0,
+                "domain_requirements": [], "project_requirements": [],
+                "certifications_required": [],
+            }
 
     required_skills = jd_profile.get("required_skills", [])
     minimum_exp     = float(jd_profile.get("minimum_experience", 0.0) or 0.0)

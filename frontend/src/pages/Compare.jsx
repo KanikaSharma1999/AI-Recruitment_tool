@@ -306,7 +306,7 @@ export default function Compare() {
   const StepBadge = ({ n, label, active, done }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{ width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: 13, background: done ? '#10b981' : active ? '#6366f1' : '#e2e8f0', color: done || active ? '#fff' : '#94a3b8' }}>
-        {done ? '✓' : n}
+        {done ? '' : n}
       </div>
       <span style={{ fontSize: 13, fontWeight: active ? 600 : 500, color: active ? '#1e293b' : '#94a3b8' }}>{label}</span>
     </div>

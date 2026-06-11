@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import InterviewModal from '../components/InterviewModal';
 import ProfileDonut from '../components/ProfileDonut';
+import InterviewInsightCard from '../components/InterviewInsightCard';
 import API from '../api/client';
 import toast from 'react-hot-toast';
 import './CandidateProfile.css';
@@ -81,9 +82,23 @@ export default function CandidateProfile() {
   const missing = c.missing_skills?.length   ? c.missing_skills   : jdRequired.filter(s => !candidateAllSkills.some(cs => cs.toLowerCase() === s.toLowerCase()));
   const bonus   = c.bonus_skills?.length     ? c.bonus_skills     : jdPreferred.filter(s => candidateAllSkills.some(cs => cs.toLowerCase() === s.toLowerCase()));
   const certs   = c.certifications || [];
+
+  // Deduped and consolidated matched and missing lists
+  const matchedSkillsCombined = [...new Set([...exact, ...sem, ...partial].filter(Boolean))];
+  const matchedSkillsLower = new Set(matchedSkillsCombined.map(s => s.toLowerCase()));
+  const uniqueMissing = missing.filter(s => s && !matchedSkillsLower.has(s.toLowerCase()));
   const tabs    = ['Overview','Resume','AI Match Analysis','Skills','Experience','Projects','Education','Interviews','Activity','Notes & Feedback'];
   const rec     = hs.recommendation || c.ai_verdict || 'Hold';
   const expYrs  = c.total_experience_years || c.experience_years || c.experience || 0;
+
+  // Get dynamic frontend base URL (prioritizing VITE_FRONTEND_URL for external sharing/tunnels)
+  const getBaseUrl = () => {
+    let url = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
+    if (url && url.endsWith('/')) {
+      url = url.slice(0, -1);
+    }
+    return url;
+  };
   
   // Education — handle structured + legacy string formats
   const eduArr  = (c.education_structured?.length && typeof c.education_structured[0] === 'object')
@@ -101,7 +116,7 @@ export default function CandidateProfile() {
   
   const rerank = async () => {
     setReranking(true);
-    try { const r = await API.post(`/candidates/rerank/${id}`); setC(r.data); toast.success('✅ AI re-analysis complete!'); }
+    try { const r = await API.post(`/candidates/rerank/${id}`); setC(r.data); toast.success(' AI re-analysis complete!'); }
     catch (e) { toast.error(e?.response?.data?.detail || 'Re-analysis failed'); }
     finally { setReranking(false); }
   };
@@ -164,10 +179,10 @@ export default function CandidateProfile() {
           <div className="cp-stat"><div className="cp-stat-label">AI Match Score</div><div className="cp-stat-val" style={{color:col(overall)}}>{overall}%</div><div className="cp-stat-sub">{overall>=80?'Excellent':overall>=60?'Good':overall>=40?'Moderate':'Low'} Match</div></div>
           <div className="cp-stat"><div className="cp-stat-label">Experience</div><div className="cp-stat-val">{expYrs}<span style={{fontSize:13}}> Yrs</span></div><div className="cp-stat-sub">Total Experience</div></div>
           <div className="cp-stat"><div className="cp-stat-label">Current Stage</div><div className="cp-stat-val" style={{fontSize:13,color:'#4f46e5'}}>{(c.status||'Applied').replace(/_/g,' ')}</div><div className="cp-stat-sub">Pipeline stage</div></div>
-          <div className="cp-stat"><div className="cp-stat-label">Skills Matched</div><div className="cp-stat-val" style={{color:col(ss(c.skill_score))}}>{exact.length+sem.length+partial.length}</div><div className="cp-stat-sub">of {jdRequired.length||exact.length+missing.length} required</div></div>
-          <div className="cp-stat"><div className="cp-stat-label">Missing Skills</div><div className="cp-stat-val" style={{color:missing.length>0?'#ef4444':'#10b981'}}>{missing.length}</div><div className="cp-stat-sub">{missing.length===0?'All covered':'Gaps found'}</div></div>
+          <div className="cp-stat"><div className="cp-stat-label">Skills Matched</div><div className="cp-stat-val" style={{color:col(ss(c.skill_score))}}>{matchedSkillsCombined.length}</div><div className="cp-stat-sub">of {jdRequired.length||(matchedSkillsCombined.length+uniqueMissing.length)} required</div></div>
+          <div className="cp-stat"><div className="cp-stat-label">Missing Skills</div><div className="cp-stat-val" style={{color:uniqueMissing.length>0?'#ef4444':'#10b981'}}>{uniqueMissing.length}</div><div className="cp-stat-sub">{uniqueMissing.length===0?'All covered':'Gaps found'}</div></div>
           <div className="cp-stat" style={{cursor:'pointer',background:reranking?'#f0f9ff':'#fff'}} onClick={rerank}>
-            <div className="cp-stat-label">🔄 Re-Analyze</div>
+            <div className="cp-stat-label"> Re-Analyze</div>
             <div className="cp-stat-val" style={{fontSize:13,color:'#6366f1'}}>{reranking?'Running...':'AI Parse'}</div>
             <div className="cp-stat-sub">Click to re-run LLM</div>
           </div>
@@ -194,7 +209,7 @@ export default function CandidateProfile() {
               </div>
 
               <div className="cp-card" style={{borderLeft:'3px solid #ef4444'}}>
-                <div className="cp-card-title" style={{color:'#dc2626'}}>⚠️ AI Weaknesses / Gaps</div>
+                <div className="cp-card-title" style={{color:'#dc2626'}}>AI Weaknesses / Gaps</div>
                 {(hs.weaknesses?.length ? hs.weaknesses : ['No critical gaps identified.']).map((w,i)=>(
                   <div key={i} className="cp-strength-item"><span style={{color:'#f59e0b',fontSize:14,flexShrink:0}}>△</span><span>{w}</span></div>
                 ))}
@@ -208,7 +223,7 @@ export default function CandidateProfile() {
               </div>
 
               <div className="cp-card">
-                <div className="cp-card-title">🎯 Interview Readiness</div>
+                <div className="cp-card-title"> Interview Readiness</div>
                 <div style={{fontSize:20,fontWeight:900,color:overall>=70?'#16a34a':overall>=50?'#d97706':'#dc2626',marginBottom:4}}>{overall>=70?'HIGH':overall>=50?'MEDIUM':'LOW'}</div>
                 <div style={{fontSize:11.5,color:'#64748b',marginBottom:10}}>AI Confidence: {hs.recommendation_confidence||'Medium'}</div>
                 {hs.interview_focus_areas?.length > 0 && <>
@@ -221,7 +236,7 @@ export default function CandidateProfile() {
             {/* CENTER: Score Breakdown + Skills Analysis + Opportunities */}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
               <div className="cp-card">
-                <div className="cp-card-title">📊 Match Score Breakdown</div>
+                <div className="cp-card-title">Match Score Breakdown</div>
                 <ProfileDonut score={overall} breakdown={bd} />
                 <div style={{marginTop:16,display:'flex',flexDirection:'column',gap:0}}>
                   <Bar label="Skills Match" value={c.skill_score} color="#6366f1" />
@@ -233,16 +248,16 @@ export default function CandidateProfile() {
               </div>
 
               <div className="cp-card">
-                <div className="cp-card-title">🔍 Skills Analysis</div>
+                <div className="cp-card-title">Skills Analysis</div>
                 {[
-                  exact.length+sem.length+partial.length > 0 && <div key="m" style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:800,color:'#16a34a',textTransform:'uppercase',marginBottom:6}}>✅ Matched Skills ({exact.length+sem.length+partial.length})</div><div>{[...exact,...sem,...partial].map(s=><Chip key={s} label={s} variant="green"/>)}</div></div>,
-                  missing.length > 0 && <div key="ms" style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:800,color:'#dc2626',textTransform:'uppercase',marginBottom:6}}>❌ Missing Required ({missing.length})</div><div>{missing.map(s=><Chip key={s} label={s} variant="red"/>)}</div></div>,
+                  matchedSkillsCombined.length > 0 && <div key="m" style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:800,color:'#16a34a',textTransform:'uppercase',marginBottom:6}}>Matched Skills ({matchedSkillsCombined.length})</div><div>{matchedSkillsCombined.map(s=><Chip key={s} label={s} variant="green"/>)}</div></div>,
+                  uniqueMissing.length > 0 && <div key="ms" style={{marginBottom:10}}><div style={{fontSize:10,fontWeight:800,color:'#dc2626',textTransform:'uppercase',marginBottom:6}}> Missing Required ({uniqueMissing.length})</div><div>{uniqueMissing.map(s=><Chip key={s} label={s} variant="red"/>)}</div></div>,
                   bonus.length > 0 && <div key="b"><div style={{fontSize:10,fontWeight:800,color:'#0891b2',textTransform:'uppercase',marginBottom:6}}>💎 Bonus Skills ({bonus.length})</div><div>{bonus.map(s=><Chip key={s} label={s} variant="blue"/>)}</div></div>
                 ]}
               </div>
 
               <div className="cp-card" style={{borderLeft:'3px solid #6366f1'}}>
-                <div className="cp-card-title" style={{color:'#4f46e5'}}>🚀 Growth Opportunities</div>
+                <div className="cp-card-title" style={{color:'#4f46e5'}}> Growth Opportunities</div>
                 {(hs.opportunities?.length ? hs.opportunities : ['Assess candidate for potential growth in this role.']).map((o,i)=>(
                   <div key={i} className="cp-strength-item"><span style={{color:'#6366f1',fontSize:14,flexShrink:0}}>★</span><span>{o}</span></div>
                 ))}
@@ -252,14 +267,14 @@ export default function CandidateProfile() {
             {/* RIGHT: Strengths + Risk Assessment + Contact info */}
             <div style={{display:'flex',flexDirection:'column',gap:12}}>
               <div className="cp-card" style={{borderLeft:'3px solid #10b981'}}>
-                <div className="cp-card-title" style={{color:'#16a34a'}}>✅ AI Strengths</div>
+                <div className="cp-card-title" style={{color:'#16a34a'}}>AI Strengths</div>
                 {(hs.strengths?.length ? hs.strengths : ['Core requirements matched.']).map((s,i)=>(
-                  <div key={i} className="cp-strength-item"><span style={{color:'#10b981',fontSize:14,flexShrink:0}}>✓</span><span>{s}</span></div>
+                  <div key={i} className="cp-strength-item"><span style={{color:'#10b981',fontSize:14,flexShrink:0}}></span><span>{s}</span></div>
                 ))}
               </div>
 
               <div className="cp-card">
-                <div className="cp-card-title">🛡️ Risk Assessment</div>
+                <div className="cp-card-title">Risk Assessment</div>
                 {(() => { const r = overall>=75?'LOW':overall>=50?'MEDIUM':'HIGH'; const rc = r==='LOW'?'low':r==='MEDIUM'?'med':'high'; return (<>
                   <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
                     <span style={{fontSize:11,fontWeight:700,color:'#64748b'}}>Overall Hiring Risk</span>
@@ -271,8 +286,8 @@ export default function CandidateProfile() {
               </div>
 
               <div className="cp-card">
-                <div className="cp-card-title">📋 Contact & Basic Info</div>
-                {[['✉️','Email',c.email],['📞','Phone',c.phone],['📍','Location',c.location],['💼','Current Title',c.current_title],['🎓','Experience',expYrs+' Years']].filter(x=>x[2]).map(([icon,label,val])=>(
+                <div className="cp-card-title"> Contact & Basic Info</div>
+                {[['✉️','Email',c.email],['📞','Phone',c.phone],['📍','Location',c.location],['','Current Title',c.current_title],['🎓','Experience',expYrs+' Years']].filter(x=>x[2]).map(([icon,label,val])=>(
                   <div key={label} style={{display:'flex',gap:8,alignItems:'flex-start',marginBottom:7,fontSize:12.5,color:'#334155'}}>
                     <span style={{flexShrink:0,width:18}}>{icon}</span>
                     <span style={{color:'#94a3b8',width:90,flexShrink:0,fontSize:11}}>{label}</span>
@@ -281,7 +296,7 @@ export default function CandidateProfile() {
                 ))}
                 {(c.github_url||c.linkedin_url||c.portfolio_url) && <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #f1f5f9',display:'flex',gap:8,flexWrap:'wrap'}}>
                   {c.github_url && <a href={c.github_url} target="_blank" rel="noreferrer" style={{fontSize:11,color:'#4f46e5',fontWeight:700,textDecoration:'none'}}>🐈 GitHub</a>}
-                  {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noreferrer" style={{fontSize:11,color:'#0077b5',fontWeight:700,textDecoration:'none'}}>💼 LinkedIn</a>}
+                  {c.linkedin_url && <a href={c.linkedin_url} target="_blank" rel="noreferrer" style={{fontSize:11,color:'#0077b5',fontWeight:700,textDecoration:'none'}}> LinkedIn</a>}
                   {c.portfolio_url && <a href={c.portfolio_url} target="_blank" rel="noreferrer" style={{fontSize:11,color:'#10b981',fontWeight:700,textDecoration:'none'}}>🌐 Portfolio</a>}
                 </div>}
               </div>
@@ -291,9 +306,9 @@ export default function CandidateProfile() {
                   <span style={{fontSize:11,fontWeight:800,color:'#64748b',textTransform:'uppercase',letterSpacing:'.5px'}}>Update Stage</span>
                 </div>
                 <select value={c.status||'applied'} onChange={e=>updateStatus(e.target.value)} style={{width:'100%',padding:'8px 10px',border:'1px solid #e2e8f0',borderRadius:8,fontSize:12.5,fontWeight:600,color:'#334155',background:'#f8fafc',cursor:'pointer'}}>
-                  {['applied','screening','shortlisted','interview_scheduled','interview_completed','offered','hired','rejected'].map(s=><option key={s} value={s}>{s.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>)}
+                  {['applied','screening','shortlisted','interview_scheduled','interview_completed','interview_analyzing','interview_analyzed','interview_incomplete','offered','hired','rejected'].map(s=><option key={s} value={s}>{s.replace('_',' ').replace(/\b\w/g,c=>c.toUpperCase())}</option>)}
                 </select>
-                <button className="cp-footer-btn primary" style={{width:'100%',marginTop:8,justifyContent:'center'}} onClick={()=>setShowInterview(true)}>📅 Schedule Interview</button>
+                <button className="cp-footer-btn primary" style={{width:'100%',marginTop:8,justifyContent:'center'}} onClick={()=>setShowInterview(true)}>Schedule Interview</button>
               </div>
             </div>
           </div>
@@ -346,14 +361,14 @@ export default function CandidateProfile() {
                       {c.interview.secure_token && (
                         <button 
                           onClick={() => {
-                            const link = `${window.location.origin}/candidate-interview/${c.interview.secure_token}`;
+                            const link = `${getBaseUrl()}/candidate-interview/${c.interview.secure_token}`;
                             navigator.clipboard.writeText(link);
                             toast.success('Candidate invite link copied!');
                           }}
                           className="cp-footer-btn"
                           style={{fontSize:11.5,display:'flex',justifyContent:'center',alignItems:'center',background:'#f1f5f9',color:'#475569',border:'1px solid #cbd5e1'}}
                         >
-                          📋 Copy Invite Link
+                           Copy Invite Link
                         </button>
                       )}
                     </div>
@@ -410,7 +425,7 @@ export default function CandidateProfile() {
 
         {tab === 'Resume' && (
           <div className="cp-card" style={{maxWidth:900}}>
-            <div className="cp-card-title">📄 Original Resume</div>
+            <div className="cp-card-title"> Original Resume</div>
             <div style={{display:'flex',gap:10,marginBottom:12}}>
               <a href={`${API.defaults.baseURL}/candidates/${id}/resume`} target="_blank" rel="noreferrer" className="cp-footer-btn">🔗 Open PDF</a>
               <a href={`${API.defaults.baseURL}/candidates/${id}/resume`} download className="cp-footer-btn">⬇️ Download</a>
@@ -440,7 +455,7 @@ export default function CandidateProfile() {
             {/* Score breakdown table */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
               <div className="cp-card">
-                <div className="cp-card-title">📊 Score Breakdown</div>
+                <div className="cp-card-title"> Score Breakdown</div>
                 {[
                   ['Skills Match',      c.skill_score,         '#6366f1'],
                   ['Experience Match',  c.experience_score,    '#10b981'],
@@ -461,31 +476,31 @@ export default function CandidateProfile() {
               </div>
 
               <div className="cp-card">
-                <div className="cp-card-title">🎯 JD Requirements vs Candidate</div>
+                <div className="cp-card-title"> JD Requirements vs Candidate</div>
                 <div style={{marginBottom:10}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#16a34a',textTransform:'uppercase',marginBottom:6}}>✅ Matched ({exact.length+sem.length+partial.length})</div>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{[...exact,...sem,...partial].slice(0,12).map(s=><Chip key={s} label={s} variant="green"/>)}</div>
-                  {[...exact,...sem,...partial].length===0 && <p style={{fontSize:12,color:'#94a3b8',fontStyle:'italic',margin:0}}>Click 🔄 Re-Analyze to compute matches</p>}
+                  <div style={{fontSize:10,fontWeight:800,color:'#16a34a',textTransform:'uppercase',marginBottom:6}}> Matched ({matchedSkillsCombined.length})</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{matchedSkillsCombined.slice(0,12).map(s=><Chip key={s} label={s} variant="green"/>)}</div>
+                  {matchedSkillsCombined.length===0 && <p style={{fontSize:12,color:'#94a3b8',fontStyle:'italic',margin:0}}>Click  Re-Analyze to compute matches</p>}
                 </div>
-                {missing.length>0 && <div style={{borderTop:'1px solid #f1f5f9',paddingTop:10}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#dc2626',textTransform:'uppercase',marginBottom:6}}>❌ Missing ({missing.length})</div>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{missing.slice(0,10).map(s=><Chip key={s} label={s} variant="red"/>)}</div>
+                {uniqueMissing.length>0 && <div style={{borderTop:'1px solid #f1f5f9',paddingTop:10}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#dc2626',textTransform:'uppercase',marginBottom:6}}> Missing ({uniqueMissing.length})</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:4}}>{uniqueMissing.slice(0,10).map(s=><Chip key={s} label={s} variant="red"/>)}</div>
                 </div>}
-                {jdRequired.length===0 && missing.length===0 && <div style={{padding:'16px 0',textAlign:'center',color:'#94a3b8',fontSize:12}}>No JD skill requirements found.<br/>Click 🔄 Re-Analyze to extract from JD.</div>}
+                {jdRequired.length===0 && uniqueMissing.length===0 && <div style={{padding:'16px 0',textAlign:'center',color:'#94a3b8',fontSize:12}}>No JD skill requirements found.<br/>Click  Re-Analyze to extract from JD.</div>}
               </div>
             </div>
 
             {/* Strengths / Weaknesses / Risks / Opportunities */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:14}}>
               {[
-                ['✅ Strengths',   hs.strengths,    '#16a34a','#f0fdf4','#bbf7d0'],
-                ['⚠️ Weaknesses', hs.weaknesses,   '#dc2626','#fef2f2','#fecaca'],
+                ['Strengths',   hs.strengths,    '#16a34a','#f0fdf4','#bbf7d0'],
+                ['Weaknesses', hs.weaknesses,   '#dc2626','#fef2f2','#fecaca'],
                 ['🚨 Risks',      hs.risks,        '#b45309','#fffbeb','#fde68a'],
-                ['🚀 Opportunities',hs.opportunities,'#4f46e5','#eff6ff','#c7d2fe'],
+                [' Opportunities',hs.opportunities,'#4f46e5','#eff6ff','#c7d2fe'],
               ].map(([title,items,tc,bg,border])=>(
                 <div key={title} className="cp-card" style={{borderLeft:`3px solid ${border}`,background:bg}}>
                   <div className="cp-card-title" style={{color:tc}}>{title}</div>
-                  {(items?.length ? items : ['Click 🔄 Re-Analyze to generate AI insights']).map((s,i)=>(
+                  {(items?.length ? items : ['Click  Re-Analyze to generate AI insights']).map((s,i)=>(
                     <div key={i} className="cp-strength-item"><span style={{color:tc,flexShrink:0}}>›</span><span>{s}</span></div>
                   ))}
                 </div>
@@ -496,11 +511,11 @@ export default function CandidateProfile() {
             {(hs.interview_focus_areas?.length>0 || hs.salary_range_fit) && (
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
                 {hs.interview_focus_areas?.length>0 && <div className="cp-card">
-                  <div className="cp-card-title" style={{color:'#0891b2'}}>🎯 Interview Focus Areas</div>
+                  <div className="cp-card-title" style={{color:'#0891b2'}}> Interview Focus Areas</div>
                   {hs.interview_focus_areas.map((a,i)=><div key={i} style={{display:'flex',gap:8,marginBottom:6,fontSize:12.5,color:'#334155'}}><span style={{color:'#6366f1',fontWeight:700}}>{i+1}.</span>{a}</div>)}
                 </div>}
                 <div className="cp-card">
-                  <div className="cp-card-title">📋 Hiring Metadata</div>
+                  <div className="cp-card-title"> Hiring Metadata</div>
                   {[['Salary Level',hs.salary_range_fit],['Onboarding',hs.onboarding_complexity],['Time to Productivity',hs.time_to_productivity],['Extraction Reliability',c.extraction_reliability]].filter(x=>x[1]).map(([k,v])=>(
                     <div key={k} style={{display: 'flex',justifyContent: 'space-between',padding:'6px 0',borderBottom:'1px solid #f1f5f9',fontSize:12.5}}>
                       <span style={{color:'#64748b',fontWeight:500}}>{k}</span><span style={{fontWeight:700,color:'#1e293b'}}>{v}</span>
@@ -516,7 +531,7 @@ export default function CandidateProfile() {
               <div style={{fontSize:16,fontWeight:700,color:'#1e293b',marginBottom:6}}>No AI Analysis Yet</div>
               <div style={{fontSize:13,color:'#64748b',marginBottom:16}}>This candidate was uploaded before the AI analysis engine. Click below to run a full LLM analysis now.</div>
               <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking} style={{margin:'0 auto'}}>
-                {reranking ? '⏳ Analyzing...' : '🔄 Run Full AI Analysis Now'}
+                {reranking ? ' Analyzing...' : ' Run Full AI Analysis Now'}
               </button>
             </div>}
           </div>
@@ -526,32 +541,32 @@ export default function CandidateProfile() {
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
             {/* JD Required Skills */}
             {jdRequired.length>0 && <div className="cp-card">
-              <div className="cp-card-title">📋 JD Required Skills ({jdRequired.length})</div>
+              <div className="cp-card-title"> JD Required Skills ({jdRequired.length})</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                 {jdRequired.map(s=>{
                   const matched = candidateAllSkills.some(cs=>cs.toLowerCase()===s.toLowerCase());
-                  return <span key={s} style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:matched?'#ecfdf5':'#fef2f2',color:matched?'#047857':'#b91c1c',border:`1px solid ${matched?'#a7f3d0':'#fecaca'}`,display:'inline-flex',alignItems:'center',gap:5}}>{matched?'✓':'✗'} {s}</span>;
+                  return <span key={s} style={{padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:matched?'#ecfdf5':'#fef2f2',color:matched?'#047857':'#b91c1c',border:`1px solid ${matched?'#a7f3d0':'#fecaca'}`,display:'inline-flex',alignItems:'center',gap:5}}>{matched?'':'✗'} {s}</span>;
                 })}
               </div>
             </div>}
             {/* Three-col skill analysis */}
             <div className="cp-grid3">
               <div className="cp-card" style={{borderLeft:'3px solid #10b981'}}>
-                <div className="cp-card-title" style={{color:'#16a34a'}}>✅ Matched Skills ({exact.length+sem.length+partial.length})</div>
-                {[...exact,...sem,...partial].map(s=><Chip key={s} label={s} variant="green"/>)}
-                {exact.length+sem.length+partial.length===0 && <p style={{fontSize:12,color:'#94a3b8',fontStyle:'italic'}}>No matches found. Click 🔄 Re-Analyze.</p>}
+                <div className="cp-card-title" style={{color:'#16a34a'}}>Matched Skills ({matchedSkillsCombined.length})</div>
+                {matchedSkillsCombined.map(s=><Chip key={s} label={s} variant="green"/>)}
+                {matchedSkillsCombined.length===0 && <p style={{fontSize:12,color:'#94a3b8',fontStyle:'italic'}}>No matches found. Click  Re-Analyze.</p>}
               </div>
               <div className="cp-card" style={{borderLeft:'3px solid #ef4444'}}>
-                <div className="cp-card-title" style={{color:'#dc2626'}}>❌ Missing Required ({missing.length})</div>
-                {missing.map(s=><Chip key={s} label={s} variant="red"/>)}
-                {missing.length===0 && jdRequired.length===0 && <p style={{fontSize:12,color:'#94a3b8',fontStyle:'italic'}}>No JD skills to compare. Click 🔄 Re-Analyze.</p>}
-                {missing.length===0 && jdRequired.length>0 && <p style={{fontSize:12,color:'#10b981',fontWeight:600}}>All required skills covered! ✓</p>}
+                <div className="cp-card-title" style={{color:'#dc2626'}}> Missing Required ({uniqueMissing.length})</div>
+                {uniqueMissing.map(s=><Chip key={s} label={s} variant="red"/>)}
+                {uniqueMissing.length===0 && jdRequired.length===0 && <p style={{fontSize:12,color:'#94a3b8',fontStyle:'italic'}}>No JD skills to compare. Click  Re-Analyze.</p>}
+                {uniqueMissing.length===0 && jdRequired.length>0 && <p style={{fontSize:12,color:'#10b981',fontWeight:600}}>All required skills covered! </p>}
               </div>
               <div className="cp-card" style={{borderLeft:'3px solid #6366f1'}}>
                 <div className="cp-card-title" style={{color:'#4f46e5'}}>💎 Candidate Skills ({candidateAllSkills.length})</div>
                 {candidateTechSkills.map(s=><Chip key={s} label={s} variant="blue"/>)}
                 {candidateSoftSkills.map(s=><Chip key={s} label={s} variant="gray"/>)}
-                {candidateAllSkills.length===0 && <p style={{fontSize:12,color:'#94a3b8',fontStyle:'italic'}}>No skills extracted. Click 🔄 Re-Analyze.</p>}
+                {candidateAllSkills.length===0 && <p style={{fontSize:12,color:'#94a3b8',fontStyle:'italic'}}>No skills extracted. Click  Re-Analyze.</p>}
               </div>
             </div>
             {/* Preferred / Bonus skills */}
@@ -560,7 +575,7 @@ export default function CandidateProfile() {
               <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                 {jdPreferred.map(s=>{
                   const has = candidateAllSkills.some(cs=>cs.toLowerCase()===s.toLowerCase());
-                  return <span key={s} style={{padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:has?'#f0f9ff':'#f8fafc',color:has?'#0369a1':'#64748b',border:`1px solid ${has?'#bae6fd':'#e2e8f0'}`}}>{has?'✓ ':''}{s}</span>;
+                  return <span key={s} style={{padding:'4px 12px',borderRadius:20,fontSize:12,fontWeight:600,background:has?'#f0f9ff':'#f8fafc',color:has?'#0369a1':'#64748b',border:`1px solid ${has?'#bae6fd':'#e2e8f0'}`}}>{has?'':''}{s}</span>;
                 })}
               </div>
             </div>}
@@ -571,8 +586,8 @@ export default function CandidateProfile() {
           <div style={{display:'flex',flexDirection:'column',gap:14}}>
             <div className="cp-card">
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-                <div className="cp-card-title" style={{margin:0}}>💼 Work History ({tl.length} positions)</div>
-                {tl.length===0 && <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking} style={{fontSize:11.5}}>{reranking?'Running...':'🔄 Extract via AI'}</button>}
+                <div className="cp-card-title" style={{margin:0}}> Work History ({tl.length} positions)</div>
+                {tl.length===0 && <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking} style={{fontSize:11.5}}>{reranking?'Running...':' Extract via AI'}</button>}
               </div>
               {tl.length>0 ? tl.map((job,i)=>(
                 <div key={i} style={{marginBottom:24,paddingLeft:18,borderLeft:`3px solid ${i===0?'#6366f1':'#e2e8f0'}`,position:'relative'}}>
@@ -599,7 +614,7 @@ export default function CandidateProfile() {
                   <div style={{fontSize:32,marginBottom:8}}>📁</div>
                   <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>No work history extracted yet</div>
                   <div style={{fontSize:12,marginBottom:12}}>The AI needs to re-parse this resume to extract structured work history.</div>
-                  <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking}>{reranking?'⏳ Extracting...':'🔄 Extract Work History via AI'}</button>
+                  <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking}>{reranking?' Extracting...':' Extract Work History via AI'}</button>
                 </div>
               )}
             </div>
@@ -628,7 +643,7 @@ export default function CandidateProfile() {
                 <div style={{fontSize:32,marginBottom:8}}>🛠️</div>
                 <div style={{fontSize:13,fontWeight:600,color:'#1e293b',marginBottom:4}}>No projects extracted yet</div>
                 <div style={{fontSize:12,color:'#64748b',marginBottom:12}}>Click Re-Analyze to extract projects from the resume.</div>
-                <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking}>{reranking?'⏳ Extracting...':'🔄 Extract Projects via AI'}</button>
+                <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking}>{reranking?' Extracting...':' Extract Projects via AI'}</button>
               </div>
             )}
           </div>
@@ -656,12 +671,12 @@ export default function CandidateProfile() {
               <div className="cp-card" style={{textAlign:'center',padding:32,border:'2px dashed #e2e8f0'}}>
                 <div style={{fontSize:32,marginBottom:8}}>🎓</div>
                 <div style={{fontSize:13,fontWeight:600,color:'#1e293b',marginBottom:4}}>No education data extracted yet</div>
-                <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking}>{reranking?'⏳ Extracting...':'🔄 Extract Education via AI'}</button>
+                <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking}>{reranking?' Extracting...':' Extract Education via AI'}</button>
               </div>
             )}
             {/* Certifications */}
             {certs.length>0 && <div className="cp-card">
-              <div className="cp-card-title">🏆 Certifications ({certs.length})</div>
+              <div className="cp-card-title"> Certifications ({certs.length})</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                 {certs.map((cert,i)=>(
                   <div key={i} style={{display:'flex',gap:10,alignItems:'center',padding:'8px 12px',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8}}>
@@ -679,31 +694,52 @@ export default function CandidateProfile() {
             <div className="cp-card">
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
                 <div className="cp-card-title" style={{margin:0}}>🎥 Scheduled Interviews</div>
-                <button className="cp-footer-btn primary" onClick={()=>setShowInterview(true)}>📅 Schedule Interview</button>
+                <button className="cp-footer-btn primary" onClick={()=>setShowInterview(true)}>Schedule Interview</button>
               </div>
               {c.interview ? (
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-                  <div className="cp-card" style={{borderLeft:'3px solid #4f46e5',background:'#f8fafc'}}>
+                <div>
+                  <div className="cp-card" style={{borderLeft:'3px solid #4f46e5',background:'#f8fafc',marginBottom:16}}>
                     <div style={{fontWeight:800,fontSize:14,color:'#1e293b',marginBottom:6}}>Technical Interview</div>
                     <div style={{fontSize:12.5,color:'#334155',marginBottom:4}}><b>Date:</b> {c.interview.date}</div>
                     <div style={{fontSize:12.5,color:'#334155',marginBottom:4}}><b>Time:</b> {c.interview.time}</div>
                     <div style={{fontSize:12.5,color:'#334155',marginBottom:8}}><b>Status:</b> <span className={`cp-risk-pill ${c.interview.status==='completed'?'risk-low':'risk-med'}`} style={{fontSize:10.5,marginLeft:4}}>{(c.interview.status||'Scheduled').toUpperCase()}</span></div>
                     {c.interview.meeting_link && (
-                      <div style={{display:'flex',gap:8,marginTop:12}}>
-                        <a href={`/interview-room/${id}`} target="_blank" rel="noreferrer" className="cp-footer-btn primary" style={{textDecoration:'none',fontSize:12,display:'inline-flex',width:'fit-content'}}>
-                          🔗 Join Live Interview Room
-                        </a>
-                        {c.interview.secure_token && (
+                      <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+                        {c.interview.status !== 'completed' && (
+                          <a href={`/interview-room/${id}`} target="_blank" rel="noreferrer" className="cp-footer-btn primary" style={{textDecoration:'none',fontSize:12,display:'inline-flex',width:'fit-content'}}>
+                            🔗 Join Live Interview Room
+                          </a>
+                        )}
+                        {c.interview.secure_token && c.interview.status !== 'completed' && (
                           <button 
                             onClick={() => {
-                              const link = `${window.location.origin}/candidate-interview/${c.interview.secure_token}`;
+                              const link = `${getBaseUrl()}/candidate-interview/${c.interview.secure_token}`;
                               navigator.clipboard.writeText(link);
                               toast.success('Candidate invite link copied!');
                             }}
                             className="cp-footer-btn"
                             style={{fontSize:12,display:'inline-flex',width:'fit-content',background:'#f1f5f9',color:'#475569',border:'1px solid #cbd5e1'}}
                           >
-                            📋 Copy Candidate Link
+                             Copy Candidate Link
+                          </button>
+                        )}
+                        {(c.interview.status === 'live' || c.status === 'interview_live') && (
+                          <button 
+                            onClick={async () => {
+                              if (window.confirm('Are you sure you want to end this interview session and trigger AI feedback generation?')) {
+                                try {
+                                  await API.post('/interviews/end', { candidate_id: id });
+                                  toast.success('Interview ended. Generating AI analysis...');
+                                  load();
+                                } catch {
+                                  toast.error('Failed to end interview session');
+                                }
+                              }
+                            }}
+                            className="cp-footer-btn danger"
+                            style={{fontSize:12,display:'inline-flex',width:'fit-content'}}
+                          >
+                            🛑 End Interview & Generate AI Feedback
                           </button>
                         )}
                       </div>
@@ -715,10 +751,13 @@ export default function CandidateProfile() {
                   <div style={{fontSize:32,marginBottom:8}}>🎥</div>
                   <div style={{fontSize:13,fontWeight:600,color:'#1e293b',marginBottom:4}}>No interviews scheduled yet</div>
                   <p style={{fontSize:12,marginBottom:12}}>Schedule an interview to generate a Jitsi meet room and coordinate with the recruiter.</p>
-                  <button className="cp-footer-btn primary" style={{margin:'0 auto'}} onClick={()=>setShowInterview(true)}>📅 Schedule Now</button>
+                  <button className="cp-footer-btn primary" style={{margin:'0 auto'}} onClick={()=>setShowInterview(true)}> Schedule Now</button>
                 </div>
               )}
             </div>
+
+            {/* AI Interview Intelligence Card */}
+            <InterviewInsightCard candidate={c} />
           </div>
         )}
 
@@ -764,10 +803,10 @@ export default function CandidateProfile() {
 
       {/* ── FOOTER ACTIONS ── */}
       <div className="cp-footer">
-        <button className="cp-footer-btn" onClick={()=>setShowInterview(true)}>📅 Schedule Interview</button>
+        <button className="cp-footer-btn" onClick={()=>setShowInterview(true)}>Schedule Interview</button>
         <button className="cp-footer-btn" onClick={()=>updateStatus('shortlisted')}>⏭️ Move to Next Stage</button>
-        <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking}>{reranking?'⏳ Analyzing...':'🔄 Re-Analyze Resume'}</button>
-        <button className="cp-footer-btn" onClick={()=>window.open(`${API.defaults.baseURL}/candidates/${id}/resume`,'_blank')}>📄 View Resume</button>
+        <button className="cp-footer-btn primary" onClick={rerank} disabled={reranking}>{reranking?' Analyzing...':'Re-Analyze Resume'}</button>
+        <button className="cp-footer-btn" onClick={()=>window.open(`${API.defaults.baseURL}/candidates/${id}/resume`,'_blank')}>View Resume</button>
         <div style={{flex:1}} />
         <button className="cp-footer-btn danger" onClick={()=>{ if(window.confirm('Reject this candidate?')) updateStatus('rejected'); }}>✖ Reject Candidate</button>
       </div>

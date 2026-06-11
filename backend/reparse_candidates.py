@@ -202,7 +202,7 @@ async def reparse_and_rerank_all():
             async for c in candidates_col.find({"job_id": jid}):
                 refreshed_candidates.append(c)
 
-            ranked = await rank_all_resumes(jd_text, refreshed_candidates)
+            ranked = await rank_all_resumes(jd_text, refreshed_candidates, job=job)
             for item in ranked:
                 cid = item["_id"]
                 feedback = get_resume_feedback(item.get("raw_text", ""), jd_text)

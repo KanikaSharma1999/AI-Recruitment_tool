@@ -222,16 +222,20 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
         except Exception:
             pass
     if job_doc:
+        job_required_skills = job_doc.get("required_skills") or job_doc.get("skills") or []
+        job_preferred_skills = job_doc.get("preferred_skills") or []
         jd_text = job_doc.get("description") or job_doc.get("jd_text") or ""
-        if jd_text:
+        if jd_text and not job_required_skills:
             jd_profile = parse_jd_with_llm(jd_text)
         else:
             jd_profile = {
                 "role_name": job_doc.get("title", ""),
-                "required_skills": job_doc.get("required_skills") or job_doc.get("skills") or [],
-                "preferred_skills": job_doc.get("preferred_skills") or [],
-                "minimum_experience": job_doc.get("experience_required") or 0,
-                "domain_requirements": [],
+                "required_skills": job_required_skills,
+                "preferred_skills": job_preferred_skills,
+                "minimum_experience": job_doc.get("experience_required") or 0.0,
+                "certifications_required": job_doc.get("certifications_required") or [],
+                "project_requirements": job_doc.get("project_requirements") or [],
+                "domain_requirements": job_doc.get("domain_requirements") or [],
             }
 
     # ── Compute skill matches using matching.py functions ───────────────────
@@ -246,10 +250,20 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
     minimum_exp = float(jd_profile.get("minimum_experience", 0.0) or 0.0)
 
     # ── Skills score (40%) ──
-    cand_tech_skills = profile.get("technical_skills", [])
+    cand_skills_list = []
+    if profile.get("technical_skills"):
+        cand_skills_list.extend(profile.get("technical_skills", []))
+    if profile.get("soft_skills"):
+        cand_skills_list.extend(profile.get("soft_skills", []))
+    if not cand_skills_list and profile.get("skills"):
+        cand_skills_list.extend(profile.get("skills", []))
+    cand_skills_list = list(set([s for s in cand_skills_list if s]))
+
     skill_score, exact, semantic_m, partial, missing = compute_skill_scores(
-        req_skills, cand_tech_skills
+        req_skills, cand_skills_list
     )
+    pref_skills = jd_profile.get("preferred_skills", [])
+    bonus = [s for s in pref_skills if any(cs.lower() == s.lower() for cs in cand_skills_list)]
     skills_weight = skill_score * 0.40
 
     # ── Experience score (25%) ──
@@ -409,9 +423,9 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
         "extraction_reliability": profile.get("extraction_reliability", "Medium"),
         # Skill match results
         "exact_matches":          exact,
-        "semantic_matches":       [],
-        "partial_matches":        [],
-        "matched_skills":         exact,
+        "semantic_matches":       semantic_m,
+        "partial_matches":        partial,
+        "matched_skills":         sorted(list(set(exact) | set(semantic_m) | set(partial))),
         "missing_skills":         missing,
         "bonus_skills":           bonus,
         # Updated scores aligned with matching.py

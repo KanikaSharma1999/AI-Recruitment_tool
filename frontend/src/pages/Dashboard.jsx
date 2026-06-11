@@ -149,12 +149,12 @@ export default function Dashboard() {
     return `${diffDays}d`;
   };
 
-  // Metrics configurations matching user image style
+  // Metrics configurations — NO fake trend numbers, only real counts
   const dashboardMetrics = [
-    { label: 'Total Jobs', value: jobs.length, trend: '+3 this week', positive: true, icon: <MdWork style={{ fontSize: 20, color: '#6366f1' }} /> },
-    { label: 'Active Applicants', value: stats?.total || 0, trend: '+12 today', positive: true, icon: <MdPeople style={{ fontSize: 20, color: '#10b981' }} /> },
-    { label: 'Interviews Scheduled', value: stats?.interview_scheduled || 0, trend: '+2 this week', positive: true, icon: <MdCalendarToday style={{ fontSize: 20, color: '#3b82f6' }} /> },
-    { label: 'Successful Hires', value: stats?.hired || 0, trend: '+3 this month', positive: true, icon: <MdCheckCircle style={{ fontSize: 20, color: '#8b5cf6' }} /> },
+    { label: 'Total Jobs', value: jobs.length, trend: `${jobs.length} active`, positive: true, icon: <MdWork style={{ fontSize: 20, color: '#6366f1' }} /> },
+    { label: 'Active Applicants', value: stats?.total || 0, trend: `${stats?.applied || 0} pending review`, positive: true, icon: <MdPeople style={{ fontSize: 20, color: '#10b981' }} /> },
+    { label: 'Interviews Scheduled', value: stats?.interview_scheduled || 0, trend: `${stats?.interview_completed || 0} completed`, positive: true, icon: <MdCalendarToday style={{ fontSize: 20, color: '#3b82f6' }} /> },
+    { label: 'Successful Hires', value: stats?.hired || 0, trend: `${stats?.offered || 0} offered`, positive: true, icon: <MdCheckCircle style={{ fontSize: 20, color: '#8b5cf6' }} /> },
   ];
 
   const quickActions = [
@@ -341,7 +341,7 @@ export default function Dashboard() {
             {/* Quick Actions Panel */}
             <div className="card" style={{ padding: 24, border: '1px solid #e2e8f0' }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 16 }}>⚡</span> Quick Actions
+                <span style={{ fontSize: 16 }}></span> Quick Actions
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
                 {quickActions.map((a, idx) => (
@@ -395,7 +395,7 @@ export default function Dashboard() {
             <div className="card" style={{ padding: 24, border: '1px solid #e2e8f0' }}>
               <div className="flex-between" style={{ marginBottom: 20 }}>
                 <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>💼</span> Open Positions
+                  <span style={{ fontSize: 16 }}></span> Open Positions
                 </h3>
                 <button className="btn btn-outline btn-sm" onClick={() => navigate('/jobs')} style={{ fontSize: 11 }}>
                   View All
@@ -489,72 +489,100 @@ export default function Dashboard() {
                 ))}
               </div>
 
-              {/* Schedule list */}
+              {/* Schedule list — grouped by actual date */}
               <div>
-                <h4 style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 12, letterSpacing: '0.5px' }}>Today's Schedule</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 320, overflowY: 'auto' }}>
-                  {stats?.upcoming_interviews?.length > 0 ? (
-                    stats.upcoming_interviews.map(item => {
-                      const liveStatus = computeInterviewStatus(item.datetime_iso, item.interview_status);
-                      const isLive = liveStatus.status === 'live' || liveStatus.status === 'imminent';
-                      return (
-                        <div
-                          key={item.id}
-                          style={{
-                            padding: '12px 14px',
-                            borderRadius: 10,
-                            background: '#ffffff',
-                            border: '1px solid #f1f5f9',
-                            borderLeft: isLive ? '4px solid #6366f1' : '4px solid #94a3b8',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-                          }}
-                        >
-                          <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
-                            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {item.candidate_name}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 10.5, color: '#64748b' }}>
-                              <span>{item.time || '10:00 AM'}</span>
-                              <span>•</span>
-                              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.job_title}</span>
-                            </div>
-                          </div>
-                          <div>
-                            {isLive ? (
-                              <button
-                                className="btn btn-primary"
-                                style={{ padding: '4px 10px', fontSize: 11, borderRadius: 8, height: 28 }}
-                                onClick={() => (window.location.href = `/candidates/${item.id}?start=true`)}
+                {(() => {
+                  const allInterviews = stats?.upcoming_interviews || [];
+                  if (allInterviews.length === 0) {
+                    return (
+                      <div style={{ padding: '20px 10px', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>
+                        No interviews scheduled.
+                      </div>
+                    );
+                  }
+
+                  // Use the interview_status the backend already computed — it's the source of truth
+                  const todayItems    = allInterviews.filter(i => i.interview_status === 'today' || i.interview_status === 'live');
+                  const tomorrowItems = allInterviews.filter(i => i.interview_status === 'tomorrow');
+                  const upcomingItems = allInterviews.filter(i => i.interview_status === 'upcoming');
+                  const missedItems   = allInterviews.filter(i => i.interview_status === 'missed' || i.interview_status === 'overdue');
+
+                  const renderGroup = (label, items, accentColor) => {
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={label} style={{ marginBottom: 14 }}>
+                        <h4 style={{ fontSize: 11, fontWeight: 800, color: accentColor, textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.5px' }}>{label}</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {items.map(item => {
+                            const liveStatus = computeInterviewStatus(item.datetime_iso, item.interview_status);
+                            const isLive = liveStatus.status === 'live' || liveStatus.status === 'imminent';
+                            return (
+                              <div
+                                key={item.id}
+                                style={{
+                                  padding: '12px 14px',
+                                  borderRadius: 10,
+                                  background: '#ffffff',
+                                  border: '1px solid #f1f5f9',
+                                  borderLeft: isLive ? '4px solid #6366f1' : `4px solid ${accentColor}40`,
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                                }}
                               >
-                                Join
-                              </button>
-                            ) : (
-                              <span style={{
-                                fontSize: 9,
-                                fontWeight: 800,
-                                background: '#e0e7ff',
-                                color: '#4338ca',
-                                padding: '2px 8px',
-                                borderRadius: 4,
-                                textTransform: 'uppercase',
-                                whiteSpace: 'nowrap'
-                              }}>
-                                Interview
-                              </span>
-                            )}
-                          </div>
+                                <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
+                                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {item.candidate_name}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 10.5, color: '#64748b' }}>
+                                    <span>{item.time || '--:--'}</span>
+                                    <span>•</span>
+                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.job_title}</span>
+                                  </div>
+                                </div>
+                                <div>
+                                  {isLive ? (
+                                    <button
+                                      className="btn btn-primary"
+                                      style={{ padding: '4px 10px', fontSize: 11, borderRadius: 8, height: 28 }}
+                                      onClick={() => (window.location.href = `/candidates/${item.id}?start=true`)}
+                                    >
+                                      Join
+                                    </button>
+                                  ) : (
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 800,
+                                      background: '#e0e7ff', color: '#4338ca',
+                                      padding: '2px 8px', borderRadius: 4,
+                                      textTransform: 'uppercase', whiteSpace: 'nowrap'
+                                    }}>
+                                      INTERVIEW
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div style={{ padding: '20px 10px', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>
-                      No interviews scheduled.
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                      {renderGroup("Today's Schedule", todayItems, '#6366f1')}
+                      {renderGroup("Tomorrow", tomorrowItems, '#3b82f6')}
+                      {renderGroup("Upcoming", upcomingItems, '#94a3b8')}
+                      {renderGroup("Missed", missedItems, '#ef4444')}
+                      {todayItems.length === 0 && tomorrowItems.length === 0 && upcomingItems.length === 0 && missedItems.length === 0 && (
+                        <div style={{ padding: '20px 10px', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>
+                          No interviews scheduled.
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -585,7 +613,7 @@ export default function Dashboard() {
                           display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 700
                         }}
                       >
-                        ✓
+                        
                       </button>
                       <button
                         onClick={() => handleResolveApproval(item.id, false, item.title)}

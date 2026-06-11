@@ -486,10 +486,13 @@ async def end_interview(
         "meeting_status": "LIVE"
     })
     
-    end_time = datetime.now(timezone.utc)
+    end_time = datetime.utcnow()
     duration_secs = 0.0
     if session:
-        duration_secs = (end_time - session["start_time"]).total_seconds()
+        start_time = session["start_time"]
+        if start_time.tzinfo is not None:
+            start_time = start_time.astimezone(timezone.utc).replace(tzinfo=None)
+        duration_secs = (end_time - start_time).total_seconds()
         await interview_sessions_col.update_one(
             {"_id": session["_id"]},
             {"$set": {
@@ -502,7 +505,12 @@ async def end_interview(
         start_time = candidate.get("interview", {}).get("start_time")
         if start_time:
             if isinstance(start_time, str):
-                start_time = datetime.fromisoformat(start_time)
+                s_raw = start_time
+                if s_raw.endswith("Z"):
+                    s_raw = s_raw[:-1]
+                start_time = datetime.fromisoformat(s_raw)
+            if start_time.tzinfo is not None:
+                start_time = start_time.astimezone(timezone.utc).replace(tzinfo=None)
             duration_secs = (end_time - start_time).total_seconds()
             
     # Update candidate state to COMPLETED
@@ -514,7 +522,7 @@ async def end_interview(
             "interview.status": "completed",
             "interview.end_time": end_time,
             "interview.duration_seconds": duration_secs,
-            "updated_at": datetime.now(timezone.utc)
+            "updated_at": datetime.utcnow()
         }}
     )
     

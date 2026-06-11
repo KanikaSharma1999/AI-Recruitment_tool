@@ -129,7 +129,7 @@ export default function ScoreDimensions({ candidate, compact = false }) {
       <div className="dimension-item" style={{ borderColor: '#6366f1', background: 'linear-gradient(135deg, #eef2ff, #f5f3ff)', border: '1px solid #c7d2fe', borderRadius: 12, padding: 16 }}>
         <div className="dimension-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 15 }}>🎯</span>
+            <span style={{ fontSize: 15 }}></span>
             <span className="dimension-label" style={{ fontWeight: 700, fontSize: 14, color: '#4f46e5' }}>Overall Match Score</span>
           </div>
           <span className="dimension-score" style={{ color: '#4f46e5', fontSize: 22, fontWeight: 900 }}>
@@ -158,7 +158,7 @@ export default function ScoreDimensions({ candidate, compact = false }) {
       {candidate.risk_flags?.length > 0 && (
         <div style={{ marginTop: 6, padding: 14, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>
-            ⚠️ Penalties Applied
+            Penalties Applied
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {candidate.risk_flags.map((flag, i) => (

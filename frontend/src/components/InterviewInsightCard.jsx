@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine } from 'recharts';
-import { Shield, MessageSquare, UserCheck, AlertCircle, Clock, Video, Info, TrendingUp, CheckCircle, Award, Brain, BarChart2, Activity } from 'lucide-react';
+import { AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { Shield, Clock, CheckCircle, AlertCircle, UserCheck, MessageSquare, Brain, Activity, TrendingUp } from 'lucide-react';
 import API from '../api/client';
+import toast from 'react-hot-toast';
 
 export default function InterviewInsightCard({ candidate }) {
   const [activeTab, setActiveTab] = useState('summary');
@@ -10,7 +11,6 @@ export default function InterviewInsightCard({ candidate }) {
   if (!analysis) {
     return (
       <div className="card animate-fade" style={{ textAlign: 'center', padding: '48px 24px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16 }}>
-        <div style={{ fontSize: 54, marginBottom: 12, color: '#cbd5e1' }}></div>
         <h3 style={{ fontSize: 16, fontWeight: 800, color: '#1e293b' }}>Interview Intelligence Pending</h3>
         <p style={{ fontSize: 13, color: '#64748b', marginTop: 6, maxWidth: 300, margin: '8px auto', lineHeight: 1.5 }}>
           Once the interview is started and completed, the real-time behavioral logs and automated recruiter reports will display here.
@@ -34,33 +34,43 @@ export default function InterviewInsightCard({ candidate }) {
     analysis_confidence = "High"
   } = analysis;
 
-  const getStatusColor = (level) => {
+  const getStatusStyle = (level) => {
     const map = {
-      'Strong Hire': 'text-emerald-700 bg-emerald-50 border-emerald-200',
-      'Hire': 'text-indigo-700 bg-indigo-50 border-indigo-200',
-      'Hold': 'text-amber-700 bg-amber-50 border-amber-200',
-      'Reject': 'text-rose-700 bg-rose-50 border-rose-200',
-      'High': 'text-emerald-700 bg-emerald-50 border-emerald-100',
-      'Medium': 'text-amber-700 bg-amber-50 border-amber-100',
-      'Low': 'text-slate-600 bg-slate-50 border-slate-100',
-      'Critical': 'text-rose-700 bg-rose-100 border-rose-200',
-      'High Risk': 'text-rose-600 bg-rose-50 border-rose-100',
-      'Suspicious': 'text-amber-600 bg-amber-50 border-amber-100',
-      'Clean': 'text-emerald-600 bg-emerald-50 border-emerald-100',
-      'Slow': 'text-amber-600 bg-amber-50',
-      'Normal': 'text-emerald-600 bg-emerald-50',
-      'Fast': 'text-blue-600 bg-blue-50',
-      'Exceptional': 'text-emerald-700 bg-emerald-50 border-emerald-200',
-      'Good': 'text-indigo-700 bg-indigo-50 border-indigo-200',
-      'Average': 'text-amber-700 bg-amber-50 border-amber-200',
-      'Basic': 'text-slate-600 bg-slate-50 border-slate-200',
-      'Weak': 'text-rose-700 bg-rose-50 border-rose-200',
+      'Strong Hire': { color: '#047857', backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' },
+      'Hire': { color: '#4338ca', backgroundColor: '#e0e7ff', borderColor: '#c7d2fe' },
+      'Hold': { color: '#b45309', backgroundColor: '#fffbeb', borderColor: '#fde68a' },
+      'Reject': { color: '#be123c', backgroundColor: '#fef2f2', borderColor: '#fecaca' },
+      'High': { color: '#047857', backgroundColor: '#ecfdf5', borderColor: '#d1fae5' },
+      'Medium': { color: '#b45309', backgroundColor: '#fffbeb', borderColor: '#fef3c7' },
+      'Low': { color: '#475569', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' },
+      'Critical': { color: '#be123c', backgroundColor: '#fee2e2', borderColor: '#fecaca' },
+      'High Risk': { color: '#e11d48', backgroundColor: '#fff1f2', borderColor: '#ffe4e6' },
+      'Suspicious': { color: '#d97706', backgroundColor: '#fffbeb', borderColor: '#fef3c7' },
+      'Clean': { color: '#059669', backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' },
+      'Slow': { color: '#d97706', backgroundColor: '#fffbeb', borderColor: 'transparent' },
+      'Normal': { color: '#059669', backgroundColor: '#ecfdf5', borderColor: 'transparent' },
+      'Fast': { color: '#2563eb', backgroundColor: '#eff6ff', borderColor: 'transparent' },
+      'Exceptional': { color: '#047857', backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' },
+      'Good': { color: '#4338ca', backgroundColor: '#e0e7ff', borderColor: '#c7d2fe' },
+      'Average': { color: '#b45309', backgroundColor: '#fffbeb', borderColor: '#fde68a' },
+      'Basic': { color: '#475569', backgroundColor: '#f8fafc', borderColor: '#cbd5e1' },
+      'Weak': { color: '#be123c', backgroundColor: '#fef2f2', borderColor: '#fecaca' },
     };
-    return map[level] || 'text-slate-600 bg-slate-50 border-slate-100';
+    return map[level] || { color: '#475569', backgroundColor: '#f8fafc', borderColor: '#e2e8f0' };
   };
 
-  const handleExport = () => {
-    window.open(`${API.defaults.baseURL}/interviews/export/${candidate.id}`, '_blank');
+  const handleExport = async () => {
+    try {
+      const r = await API.get(`/interviews/export/${candidate.id}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `interview_report_${candidate.name.replace(/\s+/g, '_')}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to download interview report');
+    }
   };
 
   const tabs = [
@@ -70,7 +80,6 @@ export default function InterviewInsightCard({ candidate }) {
     { id: 'proctoring', label: 'Integrity & Timeline', icon: <Shield size={14} /> }
   ];
 
-  // Helper component to render progress bars
   const ProgressBar = ({ label, score, color = '#6366f1' }) => (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: '#334155', marginBottom: 6 }}>
@@ -89,12 +98,25 @@ export default function InterviewInsightCard({ candidate }) {
       {/* Confidence and Export Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>
-          <Activity size={14} className="text-indigo-500" /> Interview Intelligence Engine
+          <Activity size={14} style={{ color: '#6366f1' }} /> Interview Intelligence Engine
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <button 
             onClick={handleExport}
-            className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[11px] font-bold transition-all border border-indigo-100 shadow-sm"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 12px',
+              backgroundColor: '#e0e7ff',
+              color: '#4338ca',
+              borderRadius: 8,
+              fontSize: 11,
+              fontWeight: 700,
+              border: '1px solid #c7d2fe',
+              cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
           >
             <TrendingUp size={12} /> Download PDF Report
           </button>
@@ -110,7 +132,7 @@ export default function InterviewInsightCard({ candidate }) {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', gap: 8, marginBottom: 24, overflowX: 'auto', paddingBottom: 2 }} className="custom-scrollbar">
+      <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0', gap: 8, marginBottom: 24, overflowX: 'auto', paddingBottom: 2 }}>
         {tabs.map(tab => (
           <button
             key={tab.id}
@@ -133,11 +155,19 @@ export default function InterviewInsightCard({ candidate }) {
         <div className="animate-fade">
           <div style={{ padding: 20, background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0', marginBottom: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <span className={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${getStatusColor(recommendation)}`}>
+              <span style={{
+                padding: '4px 10px',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 900,
+                textTransform: 'uppercase',
+                border: '1px solid',
+                ...getStatusStyle(recommendation)
+              }}>
                 Verdict: {recommendation}
               </span>
             </div>
-            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#1e293b', marginBottom: 8 }}>{verdict}</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#1e293b', marginBottom: 8 }}>{verdict}</h3>
             <p style={{ fontSize: 13, lineHeight: 1.6, color: '#475569', fontStyle: 'italic', borderLeft: '3px solid #cbd5e1', paddingLeft: 12, margin: 0 }}>
               "{reasoning}"
             </p>
@@ -155,7 +185,7 @@ export default function InterviewInsightCard({ candidate }) {
       )}
 
       {activeTab === 'communication' && (
-        <div className="animate-fade grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }} className="animate-fade">
           {/* Communication Analysis */}
           <div>
             <h4 style={{ fontSize: 12, fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', marginBottom: 16 }}>Communication Performance</h4>
@@ -165,8 +195,8 @@ export default function InterviewInsightCard({ candidate }) {
             <ProgressBar label="Audience Engagement" score={communication_analysis.engagement ?? 85} color="#818cf8" />
             
             <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-              <BadgeBox label="Speech Pace" value={communication_analysis.speech_pace} getStatusColor={getStatusColor} />
-              <BadgeBox label="Hesitation" value={communication_analysis.hesitation_detection} getStatusColor={getStatusColor} />
+              <BadgeBox label="Speech Pace" value={communication_analysis.speech_pace} getStatusStyle={getStatusStyle} />
+              <BadgeBox label="Hesitation" value={communication_analysis.hesitation_detection} getStatusStyle={getStatusStyle} />
             </div>
 
             {communication_analysis.evidence_quote && (
@@ -185,8 +215,8 @@ export default function InterviewInsightCard({ candidate }) {
             <ProgressBar label="Emotional Stability" score={behavioral_analysis.emotional_stability ?? 80} color="#fbbf24" />
             
             <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-              <BadgeBox label="Honesty Index" value={behavioral_analysis.honesty_indicators} getStatusColor={getStatusColor} />
-              <BadgeBox label="Stress Level" value={behavioral_analysis.stress_indicators} getStatusColor={getStatusColor} />
+              <BadgeBox label="Honesty Index" value={behavioral_analysis.honesty_indicators} getStatusStyle={getStatusStyle} />
+              <BadgeBox label="Stress Level" value={behavioral_analysis.stress_indicators} getStatusStyle={getStatusStyle} />
             </div>
 
             {behavioral_analysis.integrity_evidence && (
@@ -200,7 +230,7 @@ export default function InterviewInsightCard({ candidate }) {
       )}
 
       {activeTab === 'technical' && (
-        <div className="animate-fade grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }} className="animate-fade">
           <div>
             <h4 style={{ fontSize: 12, fontWeight: 800, color: '#06b6d4', textTransform: 'uppercase', marginBottom: 16 }}>Technical Understanding</h4>
             <ProgressBar label="Technical Knowledge Match" score={technical_evaluation.technical_understanding ?? 75} color="#06b6d4" />
@@ -210,15 +240,31 @@ export default function InterviewInsightCard({ candidate }) {
           <div>
             <h4 style={{ fontSize: 12, fontWeight: 800, color: '#06b6d4', textTransform: 'uppercase', marginBottom: 16 }}>Capability Assessments</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', alignItems: 'center' }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>Leadership Indicators</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${getStatusColor(technical_evaluation.leadership_indicators)}`}>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontWeight: 900,
+                  textTransform: 'uppercase',
+                  border: '1px solid',
+                  ...getStatusStyle(technical_evaluation.leadership_indicators || "Average")
+                }}>
                   {technical_evaluation.leadership_indicators || "Average"}
                 </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', alignItems: 'center' }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>Problem Solving Quality</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${getStatusColor(technical_evaluation.problem_solving_quality)}`}>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  fontSize: 10,
+                  fontWeight: 900,
+                  textTransform: 'uppercase',
+                  border: '1px solid',
+                  ...getStatusStyle(technical_evaluation.problem_solving_quality || "Good")
+                }}>
                   {technical_evaluation.problem_solving_quality || "Good"}
                 </span>
               </div>
@@ -238,14 +284,14 @@ export default function InterviewInsightCard({ candidate }) {
         <div className="animate-fade">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
             <div style={{ padding: 16, background: '#fef2f2', borderRadius: 12, border: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Shield size={24} className="text-rose-500" />
+              <Shield size={24} style={{ color: '#ef4444' }} />
               <div>
                 <div style={{ fontSize: 10, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase' }}>Security Risk Index</div>
                 <div style={{ fontSize: 18, fontWeight: 900, color: '#991b1b' }}>{cheating_risk.toUpperCase()}</div>
               </div>
             </div>
             <div style={{ padding: 16, background: '#f8fafc', borderRadius: 12, border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <Clock size={24} className="text-indigo-500" />
+              <Clock size={24} style={{ color: '#6366f1' }} />
               <div>
                 <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>Integrity Risk Score</div>
                 <div style={{ fontSize: 18, fontWeight: 900, color: '#1e293b' }}>{metrics.risk_score ?? 0.0}%</div>
@@ -280,7 +326,7 @@ export default function InterviewInsightCard({ candidate }) {
           )}
 
           <h4 style={{ fontSize: 12, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 12, letterSpacing: '0.5px' }}>Proctoring Log</h4>
-          <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }} className="custom-scrollbar">
+          <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
             {event_log && event_log.length > 0 ? (
               event_log.map((evt, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }}>
@@ -314,12 +360,20 @@ function MetadataTile({ label, value, icon }) {
   );
 }
 
-function BadgeBox({ label, value, getStatusColor }) {
+function BadgeBox({ label, value, getStatusStyle }) {
   const displayVal = value || "Normal";
   return (
     <div style={{ flex: 1, padding: '10px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>{label}</span>
-      <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${getStatusColor(displayVal)}`}>
+      <span style={{
+        padding: '2px 8px',
+        borderRadius: 4,
+        fontSize: 9,
+        fontWeight: 900,
+        textTransform: 'uppercase',
+        border: '1px solid',
+        ...getStatusStyle(displayVal)
+      }}>
         {displayVal}
       </span>
     </div>

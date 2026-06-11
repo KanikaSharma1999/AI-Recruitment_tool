@@ -173,7 +173,12 @@ export default function SystemStatusBanner() {
       }}>
         <MdErrorOutline size={18} style={{ color: '#ef4444' }} />
         <div style={{ flex: 1 }}>
-          <strong style={{ color: '#b91c1c' }}>Database Offline:</strong> The platform is currently in Read-Only mode. Actions like login, signup, and ranking are disabled.
+          <strong style={{ color: '#b91c1c' }}>
+            {status === 'offline' ? 'Backend Server Offline: ' : 'Database Connection Failed: '}
+          </strong>
+          {status === 'offline' 
+            ? 'The frontend cannot communicate with the backend. Please start the FastAPI backend server on port 8000.' 
+            : 'The platform is currently in Read-Only mode. Actions like login, signup, and ranking are disabled.'}
           {dbError && (
             <div style={{ fontSize: '11px', opacity: 0.8, marginTop: '2px', fontFamily: 'monospace' }}>
               Error: {dbError}

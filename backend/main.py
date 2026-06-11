@@ -453,9 +453,31 @@ async def health_details():
     }
 
 
+# CORS configuration including environment-defined origins
+origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+env_frontend = os.getenv("FRONTEND_URL")
+if env_frontend:
+    origins.append(env_frontend)
+env_vite_frontend = os.getenv("VITE_FRONTEND_URL")
+if env_vite_frontend:
+    origins.append(env_vite_frontend)
+
+# Ensure both trailing and non-trailing slash versions are allowed
+final_origins = []
+for o in origins:
+    o_stripped = o.strip()
+    if not o_stripped:
+        continue
+    final_origins.append(o_stripped)
+    if o_stripped.endswith("/"):
+        final_origins.append(o_stripped[:-1])
+    else:
+        final_origins.append(o_stripped + "/")
+final_origins = list(set(final_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],
+    allow_origins=final_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -773,7 +795,7 @@ async def rank_resumes(
                 print("[SUCCESS] Candidate ranking saved")
         return {"ranked": 0, "message": "Ranking skipped, no JD found"}
 
-    ranked = await rank_all_resumes(jd_text, candidates)
+    ranked = await rank_all_resumes(jd_text, candidates, job=job)
 
     for item in ranked:
         cid = item["_id"]
@@ -791,10 +813,14 @@ async def rank_resumes(
             except Exception as hs_err:
                 print(f"[HiringSummary] Failed for {item.get('name')}: {hs_err}")
 
-        # Map correct fields according to Phase 3
-        ai_verdict = item.get("ai_verdict")
-        if not ai_verdict:
-            ai_verdict = hiring_sum.get("recommendation", "Hold") if hiring_sum else "Hold"
+        # ALWAYS recompute ai_verdict from the fresh score — never trust stale cached value
+        from services.hiring_summary import _compute_recommendation
+        fresh_score = float(item.get("score") or item.get("ai_match_score") or 0.0)
+        risk_flags  = item.get("risk_flags", []) or []
+        ai_verdict, _ = _compute_recommendation(fresh_score, risk_flags)
+        # Keep hiring_summary recommendation in sync too
+        if hiring_sum:
+            hiring_sum["recommendation"] = ai_verdict
             
         update_fields = {
             "ai_match_score":        item.get("ai_match_score"),
@@ -1025,10 +1051,13 @@ async def admin_rerank_all(
                 except Exception:
                     pass
             
-            # Map correct fields according to Phase 3
-            ai_verdict = item.get("ai_verdict")
-            if not ai_verdict:
-                ai_verdict = hiring_sum.get("recommendation", "Hold") if hiring_sum else "Hold"
+            # ALWAYS recompute ai_verdict from the fresh score — never trust stale cached value
+            from services.hiring_summary import _compute_recommendation
+            fresh_score = float(item.get("score") or item.get("ai_match_score") or 0.0)
+            risk_flags  = item.get("risk_flags", []) or []
+            ai_verdict, _ = _compute_recommendation(fresh_score, risk_flags)
+            if hiring_sum:
+                hiring_sum["recommendation"] = ai_verdict
                 
             update_fields = {
                 "ai_match_score":        item.get("ai_match_score"),

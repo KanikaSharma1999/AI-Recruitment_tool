@@ -15,6 +15,9 @@ const STATUSES = [
   { value: 'shortlisted', label: 'Shortlisted' },
   { value: 'interview_scheduled', label: 'Interview Scheduled' },
   { value: 'interview_completed', label: 'Interview Completed' },
+  { value: 'interview_analyzing', label: 'Interview Analyzing' },
+  { value: 'interview_analyzed', label: 'Interview Analyzed' },
+  { value: 'interview_incomplete', label: 'Interview Incomplete' },
   { value: 'offered', label: 'Offered' },
   { value: 'hired', label: 'Hired' },
   { value: 'rejected', label: 'Rejected' }
@@ -155,7 +158,7 @@ export default function Candidates() {
     if (verdict === "Missing JD" || verdict === "Awaiting JD") {
       return (
         <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-secondary)' }} title="Please add a description to the job to allow ranking.">
-          ⏳ Awaiting JD
+          Awaiting JD
         </span>
       );
     }
@@ -178,7 +181,7 @@ export default function Candidates() {
           }} 
           title={`Ranking failed: ${verdict}`}
         >
-          ⚠️ {verdict}
+          {verdict}
         </span>
       );
     }
@@ -202,7 +205,7 @@ export default function Candidates() {
               <p>{candidates.length} candidates found</p>
             </div>
             <div style={{ display:'flex', gap:10 }}>
-              <button className="btn btn-secondary btn-sm" style={{ background: 'var(--primary)', color: '#ffffff', borderColor: 'var(--primary)' }} onClick={handleRerankAll}>🔄 Re-rank All</button>
+              <button className="btn btn-secondary btn-sm" style={{ background: 'var(--primary)', color: '#ffffff', borderColor: 'var(--primary)' }} onClick={handleRerankAll}>Re-rank All</button>
               <button className="btn btn-outline btn-sm" onClick={() => navigate('/compare')}>Compare</button>
               <button className="btn btn-outline btn-sm" onClick={() => downloadReport('csv')}><MdDownload /> CSV</button>
               <button className="btn btn-outline btn-sm" onClick={() => downloadReport('pdf')}><MdDownload /> PDF</button>
@@ -290,7 +293,7 @@ export default function Candidates() {
                         <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500 }}>{i + 1}</td>
                         <td>
                           <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{c.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{c.location || 'Remote'}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{c.location || 'Bengaluru'}</div>
                         </td>
                         <td>
                           <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{c.email}</div>
@@ -346,6 +349,9 @@ export default function Candidates() {
                               <option value="shortlisted">Shortlist</option>
                               <option value="interview_scheduled">Interview</option>
                               <option value="interview_completed">Completed</option>
+                              <option value="interview_analyzing">Analyzing</option>
+                              <option value="interview_analyzed">Analyzed</option>
+                              <option value="interview_incomplete">Incomplete</option>
                               <option value="offered">Offer</option>
                               <option value="hired">Hired</option>
                               <option value="rejected">Reject</option>

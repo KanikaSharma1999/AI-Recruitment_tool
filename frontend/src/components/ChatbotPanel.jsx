@@ -56,15 +56,15 @@ function TypingDots() {
 
 // ── Quick prompts ─────────────────────────────────────────────────────────────
 const QUICK_PROMPTS = [
-  { label: '🏆 Best candidates', q: 'Who are the top 5 best candidates in the pipeline?' },
-  { label: '🎯 Hire recommendation', q: 'Who should I hire? Give me your top recommendation.' },
-  { label: '⚠️ High risk', q: 'Which candidates have high cheating or integrity risk?' },
+  { label: ' Best candidates', q: 'Who are the top 5 best candidates in the pipeline?' },
+  { label: ' Hire recommendation', q: 'Who should I hire? Give me your top recommendation.' },
+  { label: 'High risk', q: 'Which candidates have high cheating or integrity risk?' },
   { label: '📝 Interview questions', q: 'Generate 5 interview questions for a Software Engineer role.' },
   { label: '📧 Offer email', q: 'Draft a professional offer letter email for the top candidate.' },
-  { label: '❌ Rejection email', q: 'Draft a professional rejection email for a candidate.' },
-  { label: '📊 Pipeline stats', q: 'Show me the current hiring pipeline statistics.' },
+  { label: ' Rejection email', q: 'Draft a professional rejection email for a candidate.' },
+  { label: ' Pipeline stats', q: 'Show me the current hiring pipeline statistics.' },
   { label: '💬 Communication', q: 'Which candidate has the best communication score?' },
-  { label: '🔍 Rediscover', q: 'Are there any rejected candidates who might fit a different role?' },
+  { label: ' Rediscover', q: 'Are there any rejected candidates who might fit a different role?' },
   { label: '🛠 Missing skills', q: 'What are the most common skill gaps across all candidates?' },
 ];
 
@@ -180,7 +180,7 @@ export default function ChatbotPanel() {
     } catch (err) {
       setMessages(p => {
         const newM = [...p];
-        newM[newM.length - 1].text = `⚠️ Connection error: ${err.message || 'Backend unavailable'}. Please try again.`;
+        newM[newM.length - 1].text = `Connection error: ${err.message || 'Backend unavailable'}. Please try again.`;
         return newM;
       });
     } finally {

@@ -101,15 +101,20 @@ CRITICAL EXTRACTION RULES:
 1. NEVER invent, infer, guess, or hallucinate any data — not skills, not companies, not dates.
 2. If a field is not present in the resume, use empty values: "" / [] / 0.0 / false.
 3. Extract skills ONLY from explicit mentions in the resume. Do not add skills based on company name or role title.
-4. For technical_skills: extract ONLY programming languages, frameworks, libraries, tools, platforms, databases explicitly listed.
+4. For technical_skills: extract ALL skills from "Skills", "Key Skills", "Technical Skills", "Core Competencies", "Areas of Expertise" sections. Be comprehensive — include every tool, language, platform, framework listed.
 5. For soft_skills: only include if candidate explicitly writes them (leadership, communication, etc).
 6. Employment timeline MUST match actual companies/dates written. If ambiguous, flag in ambiguity_detection.
 7. For education: extract the EXACT degree name, institution, and year as written.
 8. For projects: extract actual project titles/descriptions as written, NOT invented summaries.
 9. For certifications: only include if the candidate explicitly lists a certification by name.
-10. candidate_name: extract from top of resume. If unclear, use the filename stem.
-11. confidence_score: your self-assessment 0-100 of extraction accuracy for this resume.
-12. extraction_reliability: "High" if resume is clearly structured, "Medium" if partially unclear, "Low" if very noisy.
+10. candidate_name: Extract the PERSON's FULL NAME from the VERY TOP of the resume (usually largest/first text).
+    - It is typically 2-4 proper noun words (First Last or First Middle Last).
+    - REJECT any line that is a job title, role designation, or social platform text.
+    - If the PDF contains "Link Edin", "LinkedIn", "GitHub", "Twitter" near the top — IGNORE those lines entirely.
+    - If name is unclear, derive from the email username (e.g. monosmitb@gmail.com → "Monosmit B").
+11. total_experience_years: Calculate by summing employment date ranges from the Work Experience section. Also check explicit statements (e.g., "9+ years of experience"). Return as a float.
+12. confidence_score: your self-assessment 0-100 of extraction accuracy for this resume.
+13. extraction_reliability: "High" if resume is clearly structured, "Medium" if partially unclear, "Low" if very noisy.
 
 Return ONLY this exact JSON (no explanation, no markdown):
 {{
@@ -168,7 +173,7 @@ Return ONLY this exact JSON (no explanation, no markdown):
 }}
 
 RESUME TEXT:
-{raw_text[:6000]}
+{raw_text[:8000]}
 """
 
     models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
@@ -421,7 +426,9 @@ Skills: {score_breakdown.get('skill_score', 0):.1f}%
 Experience: {score_breakdown.get('experience_score', 0):.1f}%
 Semantic: {score_breakdown.get('semantic_score', 0):.1f}%
 
-Return ONLY this exact JSON (no markdown, no explanation):
+Return ONLY this exact JSON (no markdown, no explanation).
+CRITICAL: You MUST provide AT LEAST 3 detailed, evidence-based strengths, AT LEAST 3 detailed weaknesses/gaps, and AT LEAST 3 detailed hiring risks in their respective arrays. Do not return empty arrays or fewer than 3 elements under any circumstance.
+
 {{
   "recommendation": "Strong Hire | Hire | Hold | Reject",
   "recommendation_confidence": "High | Medium | Low",
@@ -429,15 +436,17 @@ Return ONLY this exact JSON (no markdown, no explanation):
   "strengths": [
     "Specific strength with evidence from their profile (e.g. '5+ years Python + FastAPI, directly matching backend stack requirement')",
     "Another specific, evidence-based strength",
-    "Another specific, evidence-based strength"
+    "Third specific, evidence-based strength"
   ],
   "weaknesses": [
     "Specific gap or concern with context (e.g. 'No cloud experience (AWS/GCP) — required for this role')",
-    "Another specific concern"
+    "Another specific concern",
+    "Third specific concern"
   ],
   "risks": [
     "Specific hiring risk (e.g. 'Frequent job changes — 4 companies in 3 years may indicate instability')",
-    "Another risk if applicable"
+    "Another risk if applicable",
+    "Third risk if applicable"
   ],
   "opportunities": [
     "Growth potential or upside (e.g. 'Strong ML background could expand into AI features the team is planning')",
@@ -516,10 +525,106 @@ Return ONLY this exact JSON (no markdown, no explanation):
 def _fallback_intelligence(candidate_profile: dict, jd_profile: dict, score_breakdown: dict) -> dict:
     """Fallback when Groq is unavailable."""
     score = score_breakdown.get("final_score", 0)
-    skills = candidate_profile.get("technical_skills", [])
+    
+    # Consolidate all candidate skills just like in matching.py
+    cand_skills_list = []
+    if candidate_profile.get("technical_skills"):
+        cand_skills_list.extend(candidate_profile.get("technical_skills", []))
+    if candidate_profile.get("soft_skills"):
+        cand_skills_list.extend(candidate_profile.get("soft_skills", []))
+    if not cand_skills_list and candidate_profile.get("skills"):
+        cand_skills_list.extend(candidate_profile.get("skills", []))
+        
+    cand_skills_normalized = {s.lower().strip() for s in cand_skills_list if s and isinstance(s, str)}
+    
     req_skills = jd_profile.get("required_skills", [])
-    missing = [s for s in req_skills if s not in skills]
-    matched = [s for s in req_skills if s in skills]
+    
+    # Case-insensitive comparison, preserving original required skill casing in matched/missing lists
+    missing = [s for s in req_skills if s and isinstance(s, str) and s.lower().strip() not in cand_skills_normalized]
+    matched = [s for s in req_skills if s and isinstance(s, str) and s.lower().strip() in cand_skills_normalized]
+
+    # STRENGTHS generation (ensure at least 3 distinct items)
+    strengths = []
+    # Strength 1: Skill alignment
+    if matched:
+        strengths.append(f"Demonstrates alignment with {len(matched)} key required skills: {', '.join(matched[:3])}")
+    elif cand_skills_list:
+        strengths.append(f"Possesses relevant technical skills: {', '.join(cand_skills_list[:3])}")
+    else:
+        strengths.append("Possesses baseline technical skills for professional workflows")
+
+    # Strength 2: Experience
+    total_exp = float(candidate_profile.get('total_experience_years') or 0.0)
+    min_exp = float(jd_profile.get('minimum_experience') or 0.0)
+    if total_exp >= min_exp and min_exp > 0:
+        strengths.append(f"Meets or exceeds the experience requirement with {total_exp:.1f} years of experience (required: {min_exp:.1f} years)")
+    elif total_exp > 0:
+        strengths.append(f"Has {total_exp:.1f} years of professional experience in technical/professional roles")
+    else:
+        strengths.append("Shows academic and practical training in candidate domain")
+
+    # Strength 3: Education/Projects/Certifications
+    projects = candidate_profile.get("projects", [])
+    certs = candidate_profile.get("certifications", [])
+    education = candidate_profile.get("education", [])
+    if projects:
+        proj_names = [p.get('name') if isinstance(p, dict) else str(p) for p in projects]
+        strengths.append(f"Practical project experience including: {', '.join(proj_names[:2])}")
+    elif certs:
+        strengths.append(f"Holds professional certifications: {', '.join(certs[:2])}")
+    elif education:
+        edu_degs = [e.get('degree') if isinstance(e, dict) else str(e) for e in education]
+        strengths.append(f"Completed relevant credentials: {', '.join(edu_degs[:2])}")
+    else:
+        strengths.append("Clear layout and structured documentation of candidate background")
+
+    # WEAKNESSES generation (ensure at least 3 distinct items)
+    weaknesses = []
+    # Weakness 1: Missing skills
+    if missing:
+        weaknesses.append(f"Missing key required skills for this role: {', '.join(missing[:3])}")
+    else:
+        weaknesses.append("No critical required skill gaps identified")
+
+    # Weakness 2: Experience Gap
+    if min_exp > 0 and total_exp < min_exp:
+        weaknesses.append(f"Experience level ({total_exp:.1f} years) is below the requested minimum of {min_exp:.1f} years")
+    elif total_exp == 0:
+        weaknesses.append("No formal employment timeline or industry experience documented")
+    else:
+        weaknesses.append("May require initial alignment to adapt past experience to this team's exact stack")
+
+    # Weakness 3: Preferred skills gap or certs/projects gap
+    pref_skills = jd_profile.get("preferred_skills", [])
+    pref_missing = [s for s in pref_skills if s and isinstance(s, str) and s.lower().strip() not in cand_skills_normalized]
+    if pref_missing:
+        weaknesses.append(f"Missing preferred / nice-to-have competencies: {', '.join(pref_missing[:3])}")
+    elif not certs:
+        weaknesses.append("No specialized industry certifications listed to validate domain skills")
+    elif not projects:
+        weaknesses.append("Limited documented hands-on projects or portfolio items")
+    else:
+        weaknesses.append("Limited exposure to advanced or secondary domain tools")
+
+    # RISKS generation (ensure at least 3 distinct items)
+    risks = []
+    # Risk 1: Skill coverage
+    if missing:
+        risks.append(f"Potential ramp-up delay due to missing skillsets: {', '.join(missing[:3])}")
+    else:
+        risks.append("No major skill dependency risks flagged")
+
+    # Risk 2: Tenure / Onboarding risk
+    timeline = candidate_profile.get("employment_timeline", [])
+    if timeline and len(timeline) >= 3 and total_exp < 4.0:
+        risks.append("Frequent employment transitions in a short timeframe may indicate retention risk")
+    elif min_exp > 0 and total_exp < min_exp * 0.5:
+        risks.append(f"Significant experience gap ({total_exp:.1f} vs required {min_exp:.1f} years) could require heavy mentoring")
+    else:
+        risks.append("Standard onboarding overhead for adjusting to a new environment and company processes")
+
+    # Risk 3: Verification
+    risks.append("Assessment is based on automated parser results; claims should be verified in interview")
 
     if score >= 80:
         rec = "Strong Hire"
@@ -533,15 +638,19 @@ def _fallback_intelligence(candidate_profile: dict, jd_profile: dict, score_brea
     return {
         "recommendation": rec,
         "recommendation_confidence": "Medium",
-        "executive_summary": f"Candidate has {candidate_profile.get('total_experience_years', 0)} years experience with {len(matched)} of {len(req_skills)} required skills matched.",
-        "strengths": [f"Matched required skills: {', '.join(matched[:4])}" if matched else "Has relevant industry experience"],
-        "weaknesses": [f"Missing required skills: {', '.join(missing[:4])}" if missing else "Minor gaps identified"],
-        "risks": ["Evaluation based on automated scoring — manual review recommended"],
-        "opportunities": ["Candidate profile warrants further assessment"],
-        "interview_focus_areas": [f"Assess proficiency in {s}" for s in missing[:3]] or ["General technical assessment"],
+        "executive_summary": f"Candidate has {total_exp:.1f} years experience with {len(matched)} of {len(req_skills)} required skills matched.",
+        "strengths": strengths,
+        "weaknesses": weaknesses,
+        "risks": risks,
+        "opportunities": [
+            "Candidate profile warrants further technical assessment",
+            "Potential to develop domain skills through hands-on role execution",
+            "Opportunity to contribute to team projects using current skillset"
+        ],
+        "interview_focus_areas": [f"Assess proficiency in {s}" for s in missing[:3]] or ["General technical assessment", "Core coding skills", "Team collaboration"],
         "hiring_red_flags": [],
-        "hiring_green_flags": [f"Has {s}" for s in matched[:3]],
-        "culture_fit_indicators": [],
+        "hiring_green_flags": [f"Has {s}" for s in matched[:3]] if matched else ["Shows relevant background"],
+        "culture_fit_indicators": ["Professional presentation", "Structured resume representation"],
         "salary_range_fit": "Mid",
         "onboarding_complexity": "Medium",
         "time_to_productivity": "1-2 weeks",

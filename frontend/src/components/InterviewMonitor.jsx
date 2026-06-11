@@ -24,6 +24,8 @@ export default function InterviewMonitor({ candidateId, onStop }) {
     let audioInterval = null;
     let audioContext = null;
     let analyser = null;
+    let faceMesh = null;
+    let camera = null;
     let lastInference = 0;
     const INFERENCE_THROTTLE_MS = 200; // ~5 FPS for CPU efficiency
 
@@ -36,29 +38,44 @@ export default function InterviewMonitor({ candidateId, onStop }) {
 
         // --- Event Listeners for Cheating Detection (Managed by parent CandidateInterview page) ---
 
-        // --- Audio Recording (Chunks every 10s with valid WebM headers) ---
-        mediaRecorderRef.current = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        mediaRecorderRef.current.ondataavailable = async (e) => {
-          if (e.data && e.data.size > 0) {
-            const formData = new FormData();
-            formData.append('audio', e.data, 'chunk.webm');
-            formData.append('candidate_id', candidateId);
-            try {
-              await API.post('/audio/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-              });
-            } catch (err) {
-              console.error('Audio chunk upload failed', err);
+        // --- Audio Recording (Chunks every 10s with valid WebM/fallback headers) ---
+        try {
+          let options = {};
+          if (typeof MediaRecorder.isTypeSupported === 'function') {
+            if (MediaRecorder.isTypeSupported('audio/webm')) {
+              options = { mimeType: 'audio/webm' };
+            } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+              options = { mimeType: 'audio/ogg' };
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+              options = { mimeType: 'audio/mp4' };
             }
           }
-        };
-        mediaRecorderRef.current.start();
-        audioInterval = setInterval(() => {
-          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-            mediaRecorderRef.current.stop();
-            mediaRecorderRef.current.start();
-          }
-        }, 10000);
+          
+          mediaRecorderRef.current = new MediaRecorder(stream, options);
+          mediaRecorderRef.current.ondataavailable = async (e) => {
+            if (e.data && e.data.size > 0) {
+              const formData = new FormData();
+              formData.append('audio', e.data, 'chunk.webm');
+              formData.append('candidate_id', candidateId);
+              try {
+                await API.post('/audio/upload', formData, {
+                  headers: { 'Content-Type': 'multipart/form-data' }
+                });
+              } catch (err) {
+                console.error('Audio chunk upload failed', err);
+              }
+            }
+          };
+          mediaRecorderRef.current.start();
+          audioInterval = setInterval(() => {
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+              mediaRecorderRef.current.stop();
+              mediaRecorderRef.current.start();
+            }
+          }, 10000);
+        } catch (mediaRecError) {
+          console.error('Failed to initialize or start MediaRecorder:', mediaRecError);
+        }
 
         // --- Audio Analysis (Silence Detection) ---
         audioContext = new (window.AudioContext || window.webkitAudioContext)();

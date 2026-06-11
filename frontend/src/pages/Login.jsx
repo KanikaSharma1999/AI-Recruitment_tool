@@ -19,6 +19,7 @@ export default function Login() {
   const navigate = useNavigate();
 
   const [isDbOffline, setIsDbOffline] = useState(false);
+  const [backendOffline, setBackendOffline] = useState(false);
 
   useEffect(() => {
     API.get('/health').then(res => {
@@ -27,7 +28,11 @@ export default function Login() {
       const dbStatus = res.data?.database?.status;
       // Treat as offline only when backend is explicitly degraded OR db is not connected
       setIsDbOffline(overallStatus !== 'ok' || dbStatus === 'offline');
-    }).catch(() => setIsDbOffline(true));
+      setBackendOffline(false);
+    }).catch(() => {
+      setBackendOffline(true);
+      setIsDbOffline(true);
+    });
   }, []);
 
   const handleSubmit = async (e) => {
@@ -145,9 +150,9 @@ export default function Login() {
           </div>
 
           <button type="submit" className="btn btn-primary"
-            disabled={loading || isDbOffline}
+            disabled={loading || isDbOffline || backendOffline}
             style={{ padding:'12px', fontSize:15, marginTop:8, justifyContent:'center', background: '#6366f1', border: 'none', color: '#fff', borderRadius: 8, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            {loading ? <span className="spinner" /> : (isDbOffline ? 'Database Offline' : <><MdLogin /> Authenticate Recruiter</>)}
+            {loading ? <span className="spinner" /> : (backendOffline ? 'Backend Offline' : (isDbOffline ? 'Database Offline' : <><MdLogin /> Authenticate Recruiter</>))}
           </button>
         </form>
       </div>

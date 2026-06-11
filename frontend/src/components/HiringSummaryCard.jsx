@@ -69,7 +69,7 @@ export default function HiringSummaryCard({ candidate }) {
             {/* Strengths */}
             <div>
               <div className="summary-col-title" style={{ color: '#059669' }}>
-                ✓ Strengths
+                Strengths
               </div>
               {(summary.strengths || []).map((s, i) => (
                 <div key={i} className="summary-point">
