@@ -182,27 +182,46 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
     if not raw_text:
         resume_path_val = c.get("resume_path") or c.get("file_path") or c.get("filename")
         if resume_path_val:
-            from config import UPLOAD_DIR
-            from resume_parser import read_pdf_bytes
-            file_path = UPLOAD_DIR / resume_path_val
-            if not file_path.exists():
-                stripped = resume_path_val.replace("uploads/", "").replace("uploads\\", "")
-                file_path = UPLOAD_DIR / stripped
-            if not file_path.exists():
-                filename = os.path.basename(resume_path_val)
-                search_results = list(UPLOAD_DIR.glob(f"**/{filename}"))
-                if search_results:
-                    file_path = search_results[0]
-            
-            if file_path.exists():
+            content = None
+            is_pdf = False
+            if resume_path_val.startswith("http://") or resume_path_val.startswith("https://"):
                 try:
-                    with open(file_path, "rb") as f:
-                        content = f.read()
-                    if file_path.suffix.lower() == ".pdf":
+                    import httpx
+                    resp = httpx.get(resume_path_val)
+                    if resp.status_code == 200:
+                        content = resp.content
+                        is_pdf = resume_path_val.lower().endswith(".pdf")
+                except Exception as e:
+                    print(f"[Parser] Failed to fetch remote resume: {e}")
+            else:
+                from config import UPLOAD_DIR
+                file_path = UPLOAD_DIR / resume_path_val
+                if not file_path.exists():
+                    stripped = resume_path_val.replace("uploads/", "").replace("uploads\\", "")
+                    file_path = UPLOAD_DIR / stripped
+                if not file_path.exists():
+                    filename = os.path.basename(resume_path_val)
+                    search_results = list(UPLOAD_DIR.glob(f"**/{filename}"))
+                    if search_results:
+                        file_path = search_results[0]
+                
+                if file_path.exists():
+                    try:
+                        with open(file_path, "rb") as f:
+                            content = f.read()
+                        is_pdf = file_path.suffix.lower() == ".pdf"
+                    except Exception as e:
+                        print(f"[Parser] Failed to read local resume: {e}")
+
+            if content:
+                try:
+                    from resume_parser import read_pdf_bytes
+                    if is_pdf:
                         raw_text = read_pdf_bytes(content)
                     else:
                         raw_text = content.decode("utf-8", errors="ignore")
                 except Exception as e:
+                    print(f"[Parser] Failed to decode file content: {e}")
                     print(f"Failed to read file: {e}")
 
     if not raw_text:
@@ -743,7 +762,7 @@ async def delete_candidate(candidate_id: str, current_user=Depends(get_current_u
     
     # 1. Clean up physical resume file from disk
     resume_path_val = candidate.get("resume_path")
-    if resume_path_val:
+    if resume_path_val and not resume_path_val.startswith("http://") and not resume_path_val.startswith("https://"):
         try:
             from config import UPLOAD_DIR
             import os
@@ -794,6 +813,10 @@ async def get_candidate_resume(candidate_id: str):
     resume_path_val = candidate.get("resume_path")
     if not resume_path_val:
         raise HTTPException(status_code=404, detail="Resume reference missing in database")
+
+    if resume_path_val.startswith("http://") or resume_path_val.startswith("https://"):
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=resume_path_val)
 
     file_path = UPLOAD_DIR / resume_path_val
     

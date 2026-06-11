@@ -86,7 +86,7 @@ async def delete_job(job_id: str, current_user=Depends(get_current_user)):
         import os
         async for candidate in candidates_col.find({"job_id": job_id}):
             resume_path_val = candidate.get("resume_path")
-            if resume_path_val:
+            if resume_path_val and not resume_path_val.startswith("http://") and not resume_path_val.startswith("https://"):
                 file_path = UPLOAD_DIR / resume_path_val
                 if file_path.exists():
                     os.remove(file_path)

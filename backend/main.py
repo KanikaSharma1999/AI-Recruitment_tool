@@ -669,15 +669,29 @@ async def upload_resumes(
         content = await file.read()
         parsed = parse_resume_file(content, file.filename)
 
-        # Save to disk using pathlib
+        # Save to disk as temporary buffer
         save_path = UPLOAD_DIR / unique_filename
         with open(save_path, "wb") as f:
             f.write(content)
 
+        # Upload via storage_service (Supabase / S3 / Local fallback)
+        from services.storage_service import storage_service
+        uploaded_url = await storage_service.upload_file(str(save_path), unique_filename, folder="resumes")
+
+        # Delete local copy if uploaded to cloud (Supabase or AWS S3)
+        if (storage_service.supabase_url and storage_service.supabase_key) or (storage_service.aws_access_key and storage_service.s3_bucket):
+            try:
+                import os
+                if os.path.exists(save_path):
+                    os.remove(save_path)
+                    print(f"[StorageService] Cleaned up temporary local resume: {save_path}")
+            except Exception as e:
+                print(f"[StorageService] Warning: Failed to clean up temp local resume: {e}")
+
         doc = {
             "job_id": job_id,
             "filename": file.filename,
-            "resume_path": unique_filename, # Store only the filename (relative to UPLOAD_DIR)
+            "resume_path": uploaded_url, # Store URL or local path
             "name": parsed["name"],
             "email": parsed["email"],
             "phone": parsed["phone"],
@@ -992,18 +1006,33 @@ async def admin_rerank_all(
             resume_path_val = cand.get("resume_path")
             raw_text = ""
             if resume_path_val:
-                file_path = UPLOAD_DIR / resume_path_val
-                if not file_path.exists():
-                    stripped = resume_path_val.replace("uploads/", "").replace("uploads\\", "")
-                    file_path = UPLOAD_DIR / stripped
-                
-                if file_path.exists():
+                file_bytes = None
+                if resume_path_val.startswith("http://") or resume_path_val.startswith("https://"):
                     try:
-                        with open(file_path, "rb") as f:
-                            file_bytes = f.read()
+                        import httpx
+                        resp = httpx.get(resume_path_val)
+                        if resp.status_code == 200:
+                            file_bytes = resp.content
+                    except Exception as e:
+                        print(f"[Rerank] Failed to fetch remote resume: {e}")
+                else:
+                    file_path = UPLOAD_DIR / resume_path_val
+                    if not file_path.exists():
+                        stripped = resume_path_val.replace("uploads/", "").replace("uploads\\", "")
+                        file_path = UPLOAD_DIR / stripped
+                    
+                    if file_path.exists():
+                        try:
+                            with open(file_path, "rb") as f:
+                                file_bytes = f.read()
+                        except Exception:
+                            pass
+
+                if file_bytes:
+                    try:
                         parsed_file = parse_resume_file(file_bytes, cand.get("filename", "resume.pdf"))
                         raw_text = parsed_file.get("raw_text", "")
-                        print(f"[RELOAD] Reloaded resume file from disk for candidate: {cand.get('name')}")
+                        print(f"[RELOAD] Reloaded resume file for candidate: {cand.get('name')}")
                     except Exception as e:
                         raw_text = cand.get("raw_text", "")
                 else:
