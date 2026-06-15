@@ -5,12 +5,13 @@ import numpy as np
 from bson import ObjectId
 from datetime import datetime, timezone
 from database import candidates_col, jobs_col, interview_sessions_col
-from groq import AsyncGroq
+from services.ollama_client import ollama_generate
 
 class MultimodalAnalyzer:
     """
     Enterprise-grade AI Interview Analysis Engine.
-    Combines web-cam face tracking statistics and audio transcripts with Groq LLM inference.
+    Combines web-cam face tracking statistics and audio transcripts with Mistral 7B (local Ollama).
+    Cost: ₹0 — all inference runs on local hardware.
     """
     def __init__(self, face_stats, transcripts, resume_score, job_title="Software Engineer", job_description="", total_duration_secs=None):
         self.face_stats = face_stats or []
@@ -224,122 +225,93 @@ class MultimodalAnalyzer:
         }
 
     async def synthesize_analysis(self, heuristics, candidate_name):
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            return self.get_fallback_synthesis(heuristics, candidate_name)
-
         full_text = " ".join(self.transcripts)
         if not full_text.strip():
             full_text = "[No verbal transcript recorded during the interview]"
 
         prompt = f"""
-You are an advanced Enterprise AI Interview Intelligence Engine.
-You need to generate a comprehensive, recruiter-ready interview analysis report based on the candidate's speech transcript and webcam eye-tracking heuristics.
+You are an Enterprise AI Interview Intelligence Engine.
+Generate a comprehensive, recruiter-ready interview analysis report based on the candidate's speech transcript and webcam eye-tracking heuristics.
 
 CANDIDATE DETAILS:
 - Candidate Name: {candidate_name}
 - Target Job: {self.job_title}
-- Job Description: {self.job_description[:600]}
+- Job Description: {self.job_description[:400]}
 
 INTERVIEW HEURISTICS:
 - Average Gaze Eye Contact: {heuristics['eye_contact']}%
 - Visual Attention Score: {heuristics['attention_score']}%
 - Verbal Communication Score: {heuristics['comm_score']}%
 - Candidate Speaking Ratio: {heuristics['speaking_ratio']}%
-- Estimated Interviewer Speaking Ratio: {heuristics['interviewer_ratio']}%
 - Word Count: {heuristics['word_count']} words
 - Filler Words Count: {heuristics['filler_count']}
 - Integrity Risk Score: {heuristics['risk_score']}% (Status: {heuristics['cheating_risk']})
-- Expression Smiling Ratio: {heuristics['smiling_ratio']}%
-- Anxious Expression Ratio: {heuristics['anxious_ratio']}%
-- Mouth Movement Talking Ratio: {heuristics['talking_ratio']}%
-- Posture Shifts: {heuristics['posture_shifts']} instances
 
 TRANSCRIPT SAMPLE:
-"{full_text[:4000]}"
+"{full_text[:3000]}"
 
-Generate a detailed analysis in JSON format. The response must be STRICTLY valid JSON, with no explanation or wrapping in markdown backticks. All scores (clarity_score, confidence_score, technical_understanding, problem_solving_quality, etc.) must be strictly grounded in direct quotes and timeline evidence.
-
-Expected JSON schema:
+Return ONLY valid JSON, no markdown, no explanation:
 {{
-  "recommendation": "Strong Hire" | "Hire" | "Hold" | "Reject",
-  "verdict": "A brief summary sentence of the hiring decision.",
-  "reasoning": "Concise recruiter-ready explanation. Example: 'Candidate demonstrated strong confidence and technical depth with excellent communication consistency throughout the interview.'",
+  "recommendation": "Strong Hire | Hire | Hold | Reject",
+  "verdict": "string",
+  "reasoning": "string",
   "communication_analysis": {{
-    "clarity_score": number (0-100),
-    "confidence_score": number (0-100),
-    "professionalism": number (0-100),
-    "engagement": number (0-100),
-    "speech_pace": "Slow" | "Normal" | "Fast",
-    "hesitation_detection": "Low" | "Moderate" | "High",
-    "filler_word_detection": {{
-       "um_uh_count": number,
-       "like_count": number,
-       "other_fillers_count": number
-    }},
-    "sentiment_analysis": "Positive" | "Neutral" | "Negative",
-    "response_quality": "High" | "Medium" | "Low",
-    "evidence_quote": "Direct quote from the transcript illustrating communication style or clarity."
+    "clarity_score": 0,
+    "confidence_score": 0,
+    "professionalism": 0,
+    "engagement": 0,
+    "speech_pace": "Normal",
+    "hesitation_detection": "Low | Moderate | High",
+    "filler_word_detection": {{"um_uh_count": 0, "like_count": 0, "other_fillers_count": 0}},
+    "sentiment_analysis": "Positive | Neutral | Negative",
+    "response_quality": "High | Medium | Low",
+    "evidence_quote": "string"
   }},
   "behavioral_analysis": {{
-    "eye_contact": number (0-100),
-    "attentiveness": number (0-100),
-    "emotional_stability": number (0-100),
-    "honesty_indicators": "High" | "Medium" | "Low",
-    "stress_indicators": "High" | "Medium" | "Low",
-    "distraction_detection": "None" | "Minor distraction" | "Highly distracted",
-    "engagement_score": number (0-100),
-    "emotion_timeline": [
-       {{"timestamp": string, "emotion": "Happy" | "Focused" | "Neutral" | "Anxious" | "Stressed"}}
-    ],
-    "suspicious_behavior_flags": [
-       {{"timestamp": string, "flag": string, "description": string}}
-    ],
-    "integrity_evidence": "Detailed description of webcam attention timeline, tab switching violations, and gaze stability."
+    "eye_contact": 0,
+    "attentiveness": 0,
+    "emotional_stability": 0,
+    "honesty_indicators": "High | Medium | Low",
+    "stress_indicators": "High | Medium | Low",
+    "distraction_detection": "None | Minor distraction | Highly distracted",
+    "engagement_score": 0,
+    "emotion_timeline": [],
+    "suspicious_behavior_flags": [],
+    "integrity_evidence": "string"
   }},
   "interview_intelligence": {{
-    "interviewer_speaking_ratio": number (0-100),
-    "candidate_speaking_ratio": number (0-100),
-    "technical_depth_estimation": number (0-100),
-    "leadership_indicators": "Strong" | "Average" | "Weak",
-    "communication_indicators": "Excellent" | "Good" | "Average" | "Poor",
-    "professionalism_indicators": "High" | "Medium" | "Low"
+    "interviewer_speaking_ratio": 0,
+    "candidate_speaking_ratio": 0,
+    "technical_depth_estimation": 0,
+    "leadership_indicators": "Strong | Average | Weak",
+    "communication_indicators": "Excellent | Good | Average | Poor",
+    "professionalism_indicators": "High | Medium | Low"
   }},
   "technical_evaluation": {{
-    "technical_understanding": number (0-100),
-    "depth_of_answers": number (0-100),
-    "leadership_indicators": "Strong" | "Average" | "Weak",
-    "problem_solving_quality": "Exceptional" | "Good" | "Average" | "Basic",
-    "evidence_quote": "Direct candidate quote from the transcript explaining a technical concept, language feature, or system design aspect."
+    "technical_understanding": 0,
+    "depth_of_answers": 0,
+    "leadership_indicators": "Strong | Average | Weak",
+    "problem_solving_quality": "Exceptional | Good | Average | Basic",
+    "evidence_quote": "string"
   }}
 }}
 """
 
         try:
-            client = AsyncGroq(api_key=api_key)
-            response = await client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=1200,
-                response_format={"type": "json_object"}
-            )
-            raw = response.choices[0].message.content.strip()
-            res = json.loads(raw)
-            
-            fallback = self.get_fallback_synthesis(heuristics, candidate_name)
-            def deep_merge(d1, d2):
-                for k, v in d2.items():
-                    if k not in d1 or d1[k] is None:
-                        d1[k] = v
-                    elif isinstance(v, dict) and isinstance(d1.get(k), dict):
-                        deep_merge(d1[k], v)
-                return d1
-            
-            return deep_merge(res, fallback)
+            res = await ollama_generate(prompt, temperature=0.3, max_tokens=1200, expect_json=True)
+            if res:
+                fallback = self.get_fallback_synthesis(heuristics, candidate_name)
+                def deep_merge(d1, d2):
+                    for k, v in d2.items():
+                        if k not in d1 or d1[k] is None:
+                            d1[k] = v
+                        elif isinstance(v, dict) and isinstance(d1.get(k), dict):
+                            deep_merge(d1[k], v)
+                    return d1
+                return deep_merge(res, fallback)
         except Exception as e:
-            print(f"[AI Analysis] Groq LLM synthesis failed, falling back. Error: {e}")
-            return self.get_fallback_synthesis(heuristics, candidate_name)
+            print(f"[AI Analysis] Ollama synthesis failed, falling back. Error: {e}")
+        return self.get_fallback_synthesis(heuristics, candidate_name)
 
     def get_fallback_synthesis(self, heuristics, candidate_name):
         score = (heuristics["attention_score"] + heuristics["comm_score"]) / 2

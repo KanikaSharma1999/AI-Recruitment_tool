@@ -4,7 +4,7 @@ import re
 import logging
 import time
 from typing import Optional
-from groq import Groq
+from services.ollama_client import ollama_generate_sync
 
 logger = logging.getLogger(__name__)
 
@@ -31,70 +31,28 @@ def get_rate_limit_sleep_time(err_msg: str) -> Optional[float]:
         return float(m_ms.group(1)) / 1000.0
     return None
 
+# ── Groq stubs kept for import compatibility with matching.py ──────────────
 _groq_rate_limited_until: float = 0.0
-
-
-def _is_groq_rate_limited() -> bool:
-    global _groq_rate_limited_until
-    if _groq_rate_limited_until == 0.0:
-        return False
-    if time.time() > _groq_rate_limited_until:
-        _groq_rate_limited_until = 0.0
-        logger.info("[LLMParser] Groq rate-limit window expired. Re-enabling Groq client.")
-        return False
-    return True
-
-
-def _set_groq_rate_limited(duration_seconds: int = 300):
-    global _groq_rate_limited_until
-    _groq_rate_limited_until = time.time() + duration_seconds
-    logger.warning(f"[LLMParser] Groq disabled for {duration_seconds}s due to rate limit.")
-
-
 _model_rate_limits = {}
+_groq_rate_limited = False
 
-def _is_model_rate_limited(model_name: str) -> bool:
-    until = _model_rate_limits.get(model_name, 0.0)
-    if until == 0.0:
-        return False
-    if time.time() > until:
-        _model_rate_limits[model_name] = 0.0
-        return False
-    return True
-
-def _set_model_rate_limited(model_name: str, duration: int = 600):
-    _model_rate_limits[model_name] = time.time() + duration
-    logger.warning(f"[LLMParser] Model {model_name} disabled for {duration}s due to rate limit.")
-
-
-_groq_rate_limited = False  # kept for import compatibility
-
-
-def get_groq_client():
-    if _is_groq_rate_limited():
-        return None
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key or "your_groq_key" in api_key:
-        return None
-    try:
-        return Groq(api_key=api_key, max_retries=1)
-    except Exception as e:
-        logger.error(f"[LLMParser] Failed to initialize Groq client: {e}")
-        return None
+def _is_groq_rate_limited() -> bool: return False
+def _set_groq_rate_limited(duration_seconds: int = 300): pass
+def _is_model_rate_limited(model_name: str) -> bool: return False
+def _set_model_rate_limited(model_name: str, duration: int = 600): pass
+def get_groq_client(): return None  # Always returns None — Ollama used instead
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def parse_resume_with_llm(raw_text: str, filename: str) -> dict:
     """
-    Parses a resume using Groq Llama with a strict, OCR-accurate extraction policy.
+    Parses a resume using Mistral 7B via local Ollama.
     NEVER invents, assumes, or hallucinates any field. Every value must be directly
     observed in the resume text.
+    Cost: ₹0 — runs on local hardware.
     """
-    client = get_groq_client()
-    if not client:
-        logger.info("[LLMParser] Groq client not configured. Using local parser fallback.")
-        return parse_resume_local_fallback(raw_text, filename)
 
-    prompt = f"""You are an elite resume extraction engine with zero-hallucination policy.
+    prompt = f"""You are a resume extraction engine. Extract ONLY what is explicitly written.
 Your task is to extract ONLY what is explicitly written in the resume text below.
 
 CRITICAL EXTRACTION RULES:
@@ -176,64 +134,9 @@ RESUME TEXT:
 {raw_text[:8000]}
 """
 
-    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-    parsed = None
-    last_error = None
-
-    for model_name in models:
-        if _is_model_rate_limited(model_name):
-            continue
-        retries = 3
-        backoff = 2.0
-        attempt = 0
-        while attempt < retries:
-            try:
-                completion = client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"},
-                    temperature=0.0,
-                    max_tokens=1000,
-                    timeout=30.0
-                )
-                response_text = completion.choices[0].message.content
-                parsed = safe_json_loads(response_text)
-                break
-            except Exception as e:
-                last_error = e
-                err_str = str(e).lower()
-                is_rate_limit = "rate_limit" in err_str or "429" in str(e) or "limit" in err_str
-                
-                if is_rate_limit:
-                    wait_time = get_rate_limit_sleep_time(err_str)
-                    if wait_time is not None:
-                        if wait_time > 60.0 or "daily" in err_str or "tpd" in err_str or "per day" in err_str:
-                            _set_model_rate_limited(model_name, 300)
-                            logger.error(f"[LLMParser] Model {model_name} hit daily rate limit. Disabling.")
-                            break
-                        else:
-                            sleep_time = wait_time + 0.5
-                            logger.warning(f"[LLMParser] Rate limit hit. Sleeping {sleep_time:.2f}s as requested by Groq...")
-                            time.sleep(sleep_time)
-                            continue
-                
-                if attempt < retries - 1:
-                    sleep_time = max(backoff, 3.0) if is_rate_limit else backoff
-                    logger.warning(f"[LLMParser] Model {model_name} attempt {attempt+1} failed: {e}. Sleeping {sleep_time}s and retrying...")
-                    time.sleep(sleep_time)
-                    backoff *= 2.0
-                else:
-                    if is_rate_limit:
-                        is_daily = "daily" in err_str or "tpd" in err_str or "per day" in err_str
-                        disable_time = 300 if is_daily else 15
-                        _set_model_rate_limited(model_name, disable_time)
-                    logger.error(f"[LLMParser] Model {model_name} all attempts failed: {e}")
-                attempt += 1
-        if parsed:
-            break
-
+    parsed = ollama_generate_sync(prompt, temperature=0.0, max_tokens=1000, expect_json=True)
     if not parsed:
-        logger.error(f"[LLMParser] LLM Resume Parsing failed on all models: {last_error}. Falling back to local.")
+        logger.warning("[LLMParser] Ollama resume parse failed or unavailable. Using local fallback.")
         return parse_resume_local_fallback(raw_text, filename)
 
     # Normalize / fill defaults
@@ -271,13 +174,10 @@ RESUME TEXT:
 
 def parse_jd_with_llm(jd_text: str) -> dict:
     """
-    Parses a Job Description using Groq Llama into structured hiring requirements.
+    Parses a Job Description using Mistral 7B via local Ollama.
     Extracts only what is explicitly in the JD — zero hallucination.
+    Cost: ₹0 — runs on local hardware.
     """
-    client = get_groq_client()
-    if not client:
-        logger.info("[LLMParser] Groq client not configured. Using local parser fallback.")
-        return parse_jd_local_fallback(jd_text)
 
     prompt = f"""You are an elite Job Description parser with zero-hallucination policy.
 Extract ONLY requirements explicitly stated in the job description below.
@@ -310,64 +210,9 @@ JOB DESCRIPTION:
 {jd_text}
 """
 
-    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-    parsed = None
-    last_error = None
-
-    for model_name in models:
-        if _is_model_rate_limited(model_name):
-            continue
-        retries = 3
-        backoff = 2.0
-        attempt = 0
-        while attempt < retries:
-            try:
-                completion = client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"},
-                    temperature=0.0,
-                    max_tokens=1000,
-                    timeout=25.0
-                )
-                response_text = completion.choices[0].message.content
-                parsed = safe_json_loads(response_text)
-                break
-            except Exception as e:
-                last_error = e
-                err_str = str(e).lower()
-                is_rate_limit = "rate_limit" in err_str or "429" in str(e) or "limit" in err_str
-                
-                if is_rate_limit:
-                    wait_time = get_rate_limit_sleep_time(err_str)
-                    if wait_time is not None:
-                        if wait_time > 60.0 or "daily" in err_str or "tpd" in err_str or "per day" in err_str:
-                            _set_model_rate_limited(model_name, 300)
-                            logger.error(f"[LLMParser] Model {model_name} hit daily rate limit. Disabling.")
-                            break
-                        else:
-                            sleep_time = wait_time + 0.5
-                            logger.warning(f"[LLMParser] Rate limit hit. Sleeping {sleep_time:.2f}s as requested by Groq...")
-                            time.sleep(sleep_time)
-                            continue
-                
-                if attempt < retries - 1:
-                    sleep_time = max(backoff, 3.0) if is_rate_limit else backoff
-                    logger.warning(f"[LLMParser] Model {model_name} attempt {attempt+1} failed: {e}. Sleeping {sleep_time}s and retrying...")
-                    time.sleep(sleep_time)
-                    backoff *= 2.0
-                else:
-                    if is_rate_limit:
-                        is_daily = "daily" in err_str or "tpd" in err_str or "per day" in err_str
-                        disable_time = 300 if is_daily else 15
-                        _set_model_rate_limited(model_name, disable_time)
-                    logger.error(f"[LLMParser] Model {model_name} all attempts failed: {e}")
-                attempt += 1
-        if parsed:
-            break
-
+    parsed = ollama_generate_sync(prompt, temperature=0.0, max_tokens=1000, expect_json=True)
     if not parsed:
-        logger.error(f"[LLMParser] LLM JD Parsing failed on all models: {last_error}. Falling back to local.")
+        logger.warning("[LLMParser] Ollama JD parse failed or unavailable. Using local fallback.")
         return parse_jd_local_fallback(jd_text)
 
     parsed.setdefault("role_name", "Software Engineer")
@@ -388,11 +233,9 @@ JOB DESCRIPTION:
 
 def generate_candidate_intelligence(candidate_profile: dict, jd_profile: dict, score_breakdown: dict) -> dict:
     """
-    Generate AI-powered candidate intelligence report with high reliability.
+    Generate AI-powered candidate intelligence report using Mistral 7B via Ollama.
+    Cost: ₹0 — runs on local hardware.
     """
-    client = get_groq_client()
-    if not client:
-        return _fallback_intelligence(candidate_profile, jd_profile, score_breakdown)
 
     prompt = f"""You are a world-class senior technical recruiter with 20+ years experience at top tech companies.
 Analyze this candidate profile against the job requirements and generate an elite-level recruiter intelligence report.
@@ -466,42 +309,9 @@ CRITICAL: You MUST provide AT LEAST 3 detailed, evidence-based strengths, AT LEA
 }}
 """
 
-    models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-    result = None
-    last_error = None
-
-    for model_name in models:
-        if _is_model_rate_limited(model_name):
-            continue
-        retries = 3
-        backoff = 2.0
-        for attempt in range(retries):
-            try:
-                completion = client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                    response_format={"type": "json_object"},
-                    temperature=0.2,
-                    max_tokens=1000,
-                    timeout=30.0
-                )
-                result = safe_json_loads(completion.choices[0].message.content)
-                break
-            except Exception as e:
-                last_error = e
-                err_str = str(e).lower()
-                is_rate_limit = "rate_limit" in err_str or "429" in str(e)
-                if is_rate_limit:
-                    _set_model_rate_limited(model_name, 600)
-                    logger.warning(f"[LLMParser] Model {model_name} rate limited. Marking as disabled and breaking retry loop.")
-                    break
-                logger.error(f"[LLMParser] Attempt {attempt+1} failed for model {model_name}: {e}")
-                break
-        if result:
-            break
-
+    result = ollama_generate_sync(prompt, temperature=0.2, max_tokens=1000, expect_json=True)
     if not result:
-        logger.error(f"[LLMParser] LLM Candidate Intelligence generation failed on all models: {last_error}")
+        logger.warning("[LLMParser] Ollama candidate intelligence generation failed. Using fallback.")
         return _fallback_intelligence(candidate_profile, jd_profile, score_breakdown)
 
     # Set defaults
@@ -523,7 +333,7 @@ CRITICAL: You MUST provide AT LEAST 3 detailed, evidence-based strengths, AT LEA
 
 
 def _fallback_intelligence(candidate_profile: dict, jd_profile: dict, score_breakdown: dict) -> dict:
-    """Fallback when Groq is unavailable."""
+    """Fallback when Ollama is unavailable."""
     score = score_breakdown.get("final_score", 0)
     
     # Consolidate all candidate skills just like in matching.py
