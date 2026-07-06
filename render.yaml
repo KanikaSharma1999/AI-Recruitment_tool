@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: hireiq-backend
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MONGO_URI
+        sync: false
+      - key: DB_NAME
+        value: ats_platform
+      - key: JWT_SECRET
+        sync: false
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: SMTP_SERVER
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: APP_NAME
+        value: "HireIQ Recruiter Platform"
+      - key: UPLOAD_DIR
+        value: "uploads"
+      - key: JITSI_APP_ID
+        value: "hireiq"
+      - key: JITSI_SECRET
+        value: "hireiq_secure_interview_secret_2026"
+      - key: JITSI_DOMAIN
+        value: "meet.jit.si"
