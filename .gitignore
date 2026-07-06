@@ -1,10 +1,40 @@
+# ── Environment ──
 .env
+*.env
+.env.*
+
+# ── Dependencies ──
 venv/
+.venv/
 node_modules/
-__pycache__/
-*.pyc
-*.log
-uploads/
-backend/faiss_index/
-backend/__pycache__/
 frontend/node_modules/
+
+# ── Python / Caches ──
+__pycache__/
+backend/__pycache__/
+backend/routes/__pycache__/
+backend/services/__pycache__/
+*.pyc
+.pytest_cache/
+backend/.pytest_cache/
+
+# ── Build / Distribution ──
+dist/
+build/
+out/
+*.egg-info/
+
+# ── Local User Data / Storage ──
+uploads/
+backend/uploads/
+backend/faiss_index/
+*.log
+
+# ── IDEs / Editors ──
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

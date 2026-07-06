@@ -68,8 +68,15 @@ async def schedule_interview(
     
     interview_data = interview.model_dump()
     secure_token = uuid.uuid4().hex
+    # Build the candidate join URL from the configured FRONTEND_URL.
+    # This ensures external candidates always get a reachable link,
+    # never a localhost URL.
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    candidate_join_url = f"{frontend_url}/candidate-interview/{secure_token}"
+
     interview_data["secure_token"] = secure_token
     interview_data["meeting_link"] = meeting_link
+    interview_data["candidate_join_url"] = candidate_join_url
     interview_data["status"] = "scheduled"
     interview_data["scheduled_at"] = datetime.now(timezone.utc)
     interview_data["scheduled_by"] = current_user.get("email")
@@ -164,8 +171,13 @@ async def schedule_interview(
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Candidate not found")
-        
-    return {"message": "Interview scheduled successfully", "meeting_link": meeting_link}
+
+    return {
+        "message": "Interview scheduled successfully",
+        "meeting_link": meeting_link,
+        "candidate_join_url": candidate_join_url,
+        "secure_token": secure_token,
+    }
 
 @router.post("/feedback")
 async def create_interview_feedback(
@@ -175,19 +187,8 @@ async def create_interview_feedback(
     candidate = await candidates_col.find_one({"_id": ObjectId(feedback.candidate_id)})
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-        
+
     resume_score = candidate.get("score", 0.0)
-    
-    # Generate Feedback using Cohere or Rule-based
-    import os
-    import cohere
-    client = None
-    api_key = os.getenv("COHERE_API_KEY")
-    if api_key:
-        try:
-            client = cohere.Client(api_key)
-        except Exception:
-            pass
 
     structured_feedback = {
         "communication": "Average",
@@ -195,26 +196,22 @@ async def create_interview_feedback(
         "recommendation": "Pending review",
         "raw_response": ""
     }
-    
-    if client:
-        try:
+
+    # Try Groq first
+    try:
+        from services.llm_service import is_groq_available, llm_generate
+        if is_groq_available():
             prompt = (
                 f"You are an HR Interview Evaluator.\n"
                 f"The candidate's AI Resume Match Score is {int(resume_score * 100)}%.\n"
-                f"Here are the HR interviewer's notes: {feedback.hr_notes}\n\n"
-                "Based on this, evaluate the candidate in exactly 3 lines formatted strictly as:\n"
+                f"HR interviewer notes: {feedback.hr_notes}\n\n"
+                "Based on this, evaluate in exactly 3 lines:\n"
                 "Communication: [Excellent/Good/Average/Poor]\n"
                 "Confidence: [Excellent/Good/Average/Poor]\n"
                 "Recommendation: [Hire / Strong Hire / Reject / Hold]"
             )
-            response = client.chat(
-                model="command-r-plus-08-2024",
-                message=prompt,
-                temperature=0.3,
-            )
-            text = response.text.strip()
+            text = llm_generate(prompt, temperature=0.3, max_tokens=80)
             structured_feedback["raw_response"] = text
-            # Parse lines
             for line in text.split('\n'):
                 line = line.strip()
                 if line.lower().startswith("communication:"):
@@ -223,11 +220,11 @@ async def create_interview_feedback(
                     structured_feedback["confidence"] = line.split(":", 1)[1].strip()
                 elif line.lower().startswith("recommendation:"):
                     structured_feedback["recommendation"] = line.split(":", 1)[1].strip()
-        except Exception as e:
-            client = None # Fallback
-            
-    if not client:
-        # Rule-based fallback
+    except Exception:
+        pass
+
+    # Rule-based fallback if Groq not available or call failed
+    if not structured_feedback.get("raw_response"):
         notes_lower = feedback.hr_notes.lower()
         if "good" in notes_lower or "great" in notes_lower or "excellent" in notes_lower:
             structured_feedback["communication"] = "Good"
@@ -241,13 +238,11 @@ async def create_interview_feedback(
             structured_feedback["communication"] = "Average"
             structured_feedback["confidence"] = "Average"
             structured_feedback["recommendation"] = "Hold"
-            
-    # Save to candidate doc
+
     await candidates_col.update_one(
         {"_id": ObjectId(feedback.candidate_id)},
         {"$set": {"interview_feedback": structured_feedback}}
     )
-    
     return {"message": "Feedback generated and saved", "feedback": structured_feedback}
 
 class FaceStatsCreate(BaseModel):
@@ -645,44 +640,32 @@ def _skills_based_questions(job_title: str, skills: list, exp_years: float = 0) 
     return questions[:10]
 
 
-async def _cohere_questions(job_title: str, skills: list, description: str) -> Optional[list]:
-    """Try to generate questions via Cohere. Returns None on failure."""
-    import os
-    api_key = os.getenv("COHERE_API_KEY")
-    if not api_key or api_key == "your_cohere_key":
-        return None
+async def _groq_questions(job_title: str, skills: list, description: str) -> Optional[list]:
+    """Generate interview questions via Groq/LLaMA-3.3. Returns None on failure."""
     try:
-        import cohere
-        client = cohere.Client(api_key)
+        from services.llm_service import is_groq_available, llm_generate
+        if not is_groq_available():
+            return None
         skills_str = ", ".join(skills[:8]) if skills else "general software skills"
         prompt = (
-            f"You are a senior technical recruiter preparing for a {job_title} interview.\n"
+            f"You are a senior technical recruiter preparing a {job_title} interview.\n"
             f"Required skills: {skills_str}\n"
             f"Job context: {description[:500]}\n\n"
-            "Generate exactly 8 interview questions. Mix of:\n"
-            "- 3 technical questions (directly testing the required skills)\n"
-            "- 3 behavioral questions (STAR-format)\n"
+            "Generate exactly 8 interview questions. Mix:\n"
+            "- 3 technical questions testing the required skills\n"
+            "- 3 behavioral STAR-format questions\n"
             "- 1 system design question\n"
             "- 1 motivation question\n\n"
             "Format each question as:\n"
             "TYPE: [Technical/Behavioral/System Design/Motivation]\n"
             "Q: [The question]\n\n"
-            "Be specific, not generic. Reference the actual skills and role context."
+            "Be specific. Reference the actual skills and role context."
         )
-        response = client.chat(
-            model="command-r-plus-08-2024",
-            message=prompt,
-            temperature=0.5,
-            max_tokens=800,
-        )
-        text = response.text.strip()
-        # Parse response
+        text = llm_generate(prompt, temperature=0.5, max_tokens=800)
         questions = []
-        blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
-        for block in blocks:
+        for block in [b.strip() for b in text.split("\n\n") if b.strip()]:
             lines = block.split("\n")
-            q_type = "Technical"
-            q_text = ""
+            q_type, q_text = "Technical", ""
             for line in lines:
                 if line.upper().startswith("TYPE:"):
                     q_type = line.split(":", 1)[1].strip()
@@ -729,8 +712,8 @@ async def generate_interview_questions(
         if missing:
             skills = missing[:3] + [s for s in skills if s not in missing][:5]
 
-    # Try Cohere first
-    questions = await _cohere_questions(job_title, skills, description)
+    # Try Groq first
+    questions = await _groq_questions(job_title, skills, description)
 
     # Template fallback
     if not questions:
@@ -740,7 +723,7 @@ async def generate_interview_questions(
         "job_title": job_title,
         "total": len(questions),
         "questions": questions,
-        "generated_by": "cohere" if questions and len(questions) >= 8 else "template",
+        "generated_by": "groq" if questions and len(questions) >= 8 else "template",
     }
 
 

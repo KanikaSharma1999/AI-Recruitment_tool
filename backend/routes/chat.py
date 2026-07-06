@@ -1,7 +1,7 @@
 """
 Intelligent HR Chatbot — routes/chat.py
 Complete fallback: works without any external API.
-Architecture: Intent Classification → DB Query → (Cohere | Template) Response
+Architecture: Intent Classification → DB Query → (Groq/LLaMA | Template) Response
 Conversation memory: last 10 turns stored per session.
 """
 
@@ -17,23 +17,6 @@ from auth import get_current_user
 from database import candidates_col, jobs_col
 
 logger = logging.getLogger(__name__)
-
-# --- DIAGNOSTICS FOR GROQ ---
-from dotenv import load_dotenv
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
-
-api_key = os.environ.get("GROQ_API_KEY")
-# print("\n[GROQ DEBUG]")
-# if api_key:
-#     print("KEY EXISTS: YES")
-#     # first 10 chars
-#     prefix = api_key[:10] if len(api_key) >= 10 else api_key
-#     print(f"KEY PREFIX: {prefix}")
-# else:
-#     print("KEY EXISTS: NO")
-#     print("KEY PREFIX: None")
-# print("MODEL: llama-3.3-70b-versatile")
-# print("BASE URL: https://api.groq.com/openai/v1\n")
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -960,19 +943,15 @@ Never hallucinate candidate names or scores — only use what is in the context.
 
 
 async def _enhance_with_groq(query: str, db_context: str, conversation_history: list) -> Optional[str]:
-    """Call Llama 3.3 70B with full recruiter context and conversation history."""
-    import os
-    from groq import AsyncGroq
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        logger.warning("[Groq] GROQ_API_KEY not set, falling back")
-        return None
+    """Call Groq/LLaMA-3.3-70B with full recruiter context and conversation history."""
     try:
-        client = AsyncGroq(api_key=api_key)
+        from services.llm_service import is_groq_available, llm_chat_async, sanitize_prompt_input
+        if not is_groq_available():
+            logger.debug("[Chat] Groq not available; using template response")
+            return None
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
-        # Inject DB context as a system message
         if db_context:
             messages.append({"role": "system", "content": f"CURRENT ATS DATA:\n{db_context}"})
 
@@ -981,39 +960,20 @@ async def _enhance_with_groq(query: str, db_context: str, conversation_history: 
             role = "user" if turn.get("role") == "user" else "assistant"
             messages.append({"role": role, "content": turn.get("text", "")})
 
-        # Add current query
-        messages.append({"role": "user", "content": query})
+        # Add current query — sanitised to prevent prompt injection from user input
+        safe_query = sanitize_prompt_input(query, max_chars=500)
+        messages.append({"role": "user", "content": safe_query})
 
-        resp = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            max_tokens=600,
-            temperature=0.4,
-        )
-        return resp.choices[0].message.content.strip()
+        result = await llm_chat_async(messages, temperature=0.4)
+        return result if result else None
     except Exception as e:
-        logger.error(f"[Groq] Failed: {e}")
+        logger.error("[Chat] Groq enhancement failed: %s", e)
         return None
 
 
 async def _enhance_with_cohere(query: str, db_context: str) -> Optional[str]:
-    """Cohere fallback — used only when Groq key is missing."""
-    import os
-    api_key = os.getenv("COHERE_API_KEY")
-    if not api_key or api_key == "your_cohere_key":
-        return None
-    try:
-        import cohere
-        client = cohere.Client(api_key)
-        prompt = (
-            "You are an expert AI Recruitment Analyst. Answer recruiter queries using the context below.\n"
-            f"Query: {query}\n\nContext:\n{db_context}\n\nRespond with markdown formatting."
-        )
-        response = client.chat(model="command-r-plus-08-2024", message=prompt, temperature=0.3)
-        return response.text.strip()
-    except Exception as e:
-        logger.error(f"[Cohere] Enhancement failed: {e}")
-        return None
+    """Use Groq for narrative enhancement (previously Cohere)."""
+    return await _enhance_with_groq(query, db_context, [])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1116,101 +1076,66 @@ async def chat_stream(
     memory = _session_memory[uid]
 
     from fastapi.responses import StreamingResponse
-    import os
-    from groq import AsyncGroq
-    import traceback
+    from services.llm_service import is_groq_available, llm_stream, sanitize_prompt_input
 
-    api_key = os.environ.get("GROQ_API_KEY")
-    try:
-        groq_client = AsyncGroq(
-            api_key=api_key
-        )
-    except Exception as init_err:
-        tb = traceback.format_exc()
-        print(f"\n[GROQ INIT ERROR] EXCEPTION OCCURRED DURING CLIENT INITIALIZATION!")
-        print(f"GROQ KEY EXISTS: {bool(api_key)}")
-        print(f"RAW ERROR: {str(init_err)}")
-        print(f"TRACEBACK:\n{tb}")
-        logger.error(f"[GROQ ERROR] Initialization failed:\n{tb}")
-        
-        async def err_gen():
-            yield f"⚠️ Backend Configuration Error: Could not initialize Groq client. Error: {str(init_err)}"
-        return StreamingResponse(err_gen(), media_type="text/plain")
-
-    # 1. Structured DB Query Pipeline (Priority)
+    # ── 1. Structured DB Query Pipeline ──────────────────────────────────────
     from bson import ObjectId
     from services.vector_store import search_resumes
 
-    # Fetch all job roles from DB
     jobs = []
     try:
         async for j in jobs_col.find({}):
             jobs.append(j)
     except Exception as job_err:
-        logger.error(f"[DB ERROR] Failed to fetch jobs: {job_err}")
+        logger.error("[Chat Stream] Failed to fetch jobs: %s", job_err)
 
-    # Detect if any job title is mentioned in the query
     selected_job = None
     for j in jobs:
         title = j.get("title", "").strip().lower()
         if not title:
             continue
-        # Check direct inclusion
         if title in query.lower():
             selected_job = j
             break
-        # Check token overlapping (all words of title length > 3 in query)
         words = [w.lower() for w in title.split() if len(w) > 3]
         if words and all(w in query.lower() for w in words):
             selected_job = j
             break
 
-    # Fetch and sort candidates accordingly
     candidates = []
     try:
         if selected_job:
-            job_id_str = str(selected_job["_id"])
-            async for c in candidates_col.find({"job_id": job_id_str}):
+            async for c in candidates_col.find({"job_id": str(selected_job["_id"])}):
                 candidates.append(c)
         else:
-            # Fallback: top candidates across entire database
             async for c in candidates_col.find({}).sort("score", -1).limit(10):
                 candidates.append(c)
     except Exception as cand_err:
-        logger.error(f"[DB ERROR] Failed to fetch candidates: {cand_err}")
+        logger.error("[Chat Stream] Failed to fetch candidates: %s", cand_err)
 
-    # Define sorting priority
     def get_rec_priority(cand):
         rec = str(cand.get("hiring_summary", {}).get("recommendation", "")).strip().lower()
-        if "strong" in rec:
-            return 4
-        elif "hire" in rec:
-            return 3
-        elif "hold" in rec:
-            return 2
-        elif "reject" in rec:
-            return 1
+        if "strong" in rec: return 4
+        if "hire"   in rec: return 3
+        if "hold"   in rec: return 2
+        if "reject" in rec: return 1
         return 0
 
-    def sort_key(cand):
-        return (
-            float(cand.get("score") or 0.0),
-            get_rec_priority(cand),
-            float(cand.get("experience_years") or 0.0)
-        )
+    candidates.sort(
+        key=lambda c: (float(c.get("score") or 0), get_rec_priority(c), float(c.get("experience_years") or 0)),
+        reverse=True,
+    )
 
-    candidates.sort(key=sort_key, reverse=True)
-
-    # Format the dynamic database RAG context
+    # ── 2. Build RAG context from DB ─────────────────────────────────────────
     rag_context = "--- DYNAMIC ATS DATABASE RAG CONTEXT ---\n"
     if selected_job:
         rag_context += f"Job Title: {selected_job.get('title')} (ID: {str(selected_job['_id'])})\n"
         rag_context += f"Required Skills: {', '.join(selected_job.get('required_skills', []))}\n\n"
-        rag_context += f"Candidates registered in ATS pipeline for '{selected_job.get('title')}':\n"
+        rag_context += f"Candidates for '{selected_job.get('title')}':\n"
         if candidates:
             for rank, c in enumerate(candidates, 1):
-                hs = c.get("hiring_summary", {}) or {}
-                ai = c.get("ai_analysis", {}) or {}
+                hs  = c.get("hiring_summary", {}) or {}
+                ai  = c.get("ai_analysis", {}) or {}
                 rec = hs.get("recommendation", "N/A")
                 strengths = ", ".join(hs.get("strengths", [])[:3])
                 rag_context += (
@@ -1220,92 +1145,85 @@ async def chat_stream(
                     f"Skills: {', '.join(c.get('skills', []))} | Strengths: {strengths}\n"
                 )
         else:
-            rag_context += "No candidates found in the database for this job role. Report that no candidates exist.\n"
+            rag_context += "No candidates found for this job. Advise recruiter to upload resumes.\n"
     else:
-        rag_context += "Active Jobs in Database:\n"
+        rag_context += "Active Jobs:\n"
         for j in jobs:
-            rag_context += f"- Job: {j.get('title')} (ID: {str(j['_id'])})\n"
-            
-        rag_context += "\nTop Candidates across all jobs:\n"
+            rag_context += f"- {j.get('title')} (ID: {str(j['_id'])})\n"
+        rag_context += "\nTop Candidates (all jobs):\n"
         for rank, c in enumerate(candidates, 1):
-            cand_job_title = "Unknown Job"
-            for j in jobs:
-                if str(j["_id"]) == c.get("job_id"):
-                    cand_job_title = j.get("title")
-                    break
-            hs = c.get("hiring_summary", {}) or {}
+            cand_job_title = next((j.get("title") for j in jobs if str(j["_id"]) == c.get("job_id")), "Unknown")
+            hs  = c.get("hiring_summary", {}) or {}
             rec = hs.get("recommendation", "N/A")
             rag_context += (
-                f"{rank}. {c.get('name')} | Job: {cand_job_title} | Score: {c.get('score', 0):.0f}% | "
-                f"Rec: {rec} | Status: {c.get('status')}\n"
+                f"{rank}. {c.get('name')} | Job: {cand_job_title} | "
+                f"Score: {c.get('score', 0):.0f}% | Rec: {rec} | Status: {c.get('status')}\n"
             )
 
-    # 2. Semantic vector search (for resume reasoning/rediscovery support)
+    # ── 3. Semantic vector search ─────────────────────────────────────────────
+    semantic_context = ""
     try:
         resume_hits = await search_resumes(query, top_k=5)
+        if resume_hits:
+            semantic_context = "\n--- SEMANTIC RESUME SEARCH RESULTS ---\n"
+            for h in resume_hits:
+                c = await candidates_col.find_one({"_id": ObjectId(h["id"])})
+                if c:
+                    semantic_context += (
+                        f"Candidate: {c.get('name')} (Score: {c.get('score', 0):.0f}%)\n"
+                        f"Resume snippet: {h.get('text', '')[:300]}\n\n"
+                    )
     except Exception:
-        resume_hits = []
-        
-    semantic_context = ""
-    if resume_hits:
-        semantic_context += "\n--- SEMANTIC RESUME SEARCH RESULTS (For reference) ---\n"
-        for h in resume_hits:
-            c = await candidates_col.find_one({"_id": ObjectId(h["id"])})
-            if c:
-                semantic_context += f"Candidate: {c.get('name')} (Score: {c.get('score', 0):.0f}%)\n"
-                semantic_context += f"Matching resume text snippet: {h.get('text', '')[:300]}\n\n"
+        pass
 
-    system_prompt = """You are HireIQ Copilot, an elite AI Recruitment Assistant powered by Llama 3.3 70B.
-
-Your task is to answer the recruiter's questions about candidate pipelines, matching, and qualifications.
-
-CONCISENESS RULES:
-1. ALWAYS keep your response extremely brief and direct (1-3 sentences max).
-2. NEVER write long paragraphs, long essays, or lists of bullet points unless explicitly asked by the recruiter.
-3. NEVER repeat sentences or duplicate words/phrases.
-4. Directly state the top candidates and their scores based strictly on the DYNAMIC ATS DATABASE RAG CONTEXT below.
-5. If no candidates exist for a role, state that clearly and suggest uploading resumes."""
-
+    # ── 4. Build messages for LLM ────────────────────────────────────────────
+    system_prompt = (
+        "You are HireIQ Copilot, an elite AI Recruitment Assistant.\n\n"
+        "CONCISENESS RULES:\n"
+        "1. Keep responses brief and direct (1-3 sentences max unless asked).\n"
+        "2. Never repeat sentences or duplicate phrases.\n"
+        "3. Base all answers strictly on the ATS context below.\n"
+        "4. If no candidates exist for a role, say so and suggest uploading resumes."
+    )
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "system", "content": rag_context}
+        {"role": "system", "content": rag_context},
     ]
     if semantic_context:
         messages.append({"role": "system", "content": semantic_context})
-
     for turn in memory[-10:]:
         messages.append({"role": turn["role"], "content": turn["text"]})
-        
-    messages.append({"role": "user", "content": query})
+    safe_query = sanitize_prompt_input(query, max_chars=500)
+    messages.append({"role": "user", "content": safe_query})
+
+    # ── 5. Stream response ────────────────────────────────────────────────────
+    if not is_groq_available():
+        # Template fallback when Groq is not configured
+        async def template_gen():
+            if candidates:
+                top = candidates[0]
+                reply = (
+                    f"Based on ATS data, the top candidate is **{top.get('name')}** "
+                    f"with a match score of **{top.get('score', 0):.0f}%**. "
+                    "(GROQ_API_KEY not configured — add it to .env for full AI-powered responses.)"
+                )
+            else:
+                reply = "No candidates found in the database. (GROQ_API_KEY not configured — add it to .env)"
+            yield reply
+            memory.append({"role": "user", "text": query})
+            memory.append({"role": "assistant", "text": reply})
+        return StreamingResponse(template_gen(), media_type="text/plain")
 
     async def generate():
         full_text = ""
         try:
-            response = await groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=messages,
-                stream=True,
-                temperature=0.4,
-                max_tokens=800
-            )
-            async for chunk in response:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    text = chunk.choices[0].delta.content
-                    full_text += text
-                    yield text
+            async for token in llm_stream(messages=messages, temperature=0.4):
+                full_text += token
+                yield token
         except Exception as e:
-            tb = traceback.format_exc()
-            raw_key = os.environ.get("GROQ_API_KEY")
-            print(f"\n[GROQ STREAM ERROR] EXCEPTION OCCURRED DURING API CALL!")
-            print(f"GROQ KEY EXISTS: {bool(raw_key)}")
-            print(f"MODEL USED: llama-3.3-70b-versatile")
-            print(f"RAW GROQ ERROR: {str(e)}")
-            print(f"TRACEBACK:\n{tb}")
-            
             err_msg = f"\n\n⚠️ AI Error: {str(e)}"
             full_text += err_msg
             yield err_msg
-            
         memory.append({"role": "user", "text": query})
         memory.append({"role": "assistant", "text": full_text})
         if len(memory) > MAX_MEMORY * 2:

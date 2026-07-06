@@ -1,94 +1,93 @@
-"""
-Local Storage Service
-======================
-Stores all files on the local server filesystem.
-No cloud storage. No S3. No Supabase. No API keys. No cost.
-
-Files are stored under /uploads/ with sub-folders per type.
-"""
-
 import os
 import uuid
 import shutil
 from pathlib import Path
 
-
-UPLOAD_ROOT = Path(os.getenv("UPLOAD_DIR", "uploads"))
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
-
-
-class LocalStorageService:
-    """
-    Manages file persistence on the local server filesystem.
-    All resumes and recordings are stored in /uploads/.
-    """
-
-    def _ensure_dir(self, folder: str) -> Path:
-        dir_path = UPLOAD_ROOT / folder
-        dir_path.mkdir(parents=True, exist_ok=True)
-        return dir_path
+class CloudStorageService:
+    def __init__(self):
+        # AWS S3 Configurations
+        self.s3_bucket = os.getenv("AWS_S3_BUCKET")
+        self.aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+        self.aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+        self.aws_region = os.getenv("AWS_REGION", "us-east-1")
+        
+        # Supabase Storage Configurations
+        self.supabase_url = os.getenv("SUPABASE_URL")
+        self.supabase_key = os.getenv("SUPABASE_KEY")
+        self.supabase_bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "interviews")
 
     async def upload_file(self, file_path: str, filename: str, folder: str = "recordings") -> str:
         """
-        Copies a file to local storage and returns a URL path.
-
-        Args:
-            file_path: Absolute path to the source file.
-            filename:  Original filename (used as suffix for uniqueness).
-            folder:    Sub-folder inside /uploads/ (e.g. 'resumes', 'recordings').
-
-        Returns:
-            Public URL string (served by FastAPI StaticFiles mount).
+        Uploads a local file to the configured cloud storage (S3 or Supabase),
+        or falls back to local storage serving with a generated URL.
         """
-        dest_dir = self._ensure_dir(folder)
-        dest_filename = f"{uuid.uuid4().hex}_{filename}"
-        dest_path = dest_dir / dest_filename
+        # Determine content type based on extension
+        ext = Path(filename).suffix.lower()
+        content_types = {
+            '.pdf': 'application/pdf',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.doc': 'application/msword',
+            '.txt': 'text/plain',
+            '.webm': 'audio/webm',
+            '.mp3': 'audio/mp3',
+            '.wav': 'audio/wav',
+        }
+        content_type = content_types.get(ext, 'application/octet-stream')
 
-        try:
-            shutil.copy2(file_path, dest_path)
-        except Exception as e:
-            raise RuntimeError(f"[LocalStorage] Failed to copy file to storage: {e}")
+        # 1. AWS S3 Upload
+        if self.aws_access_key and self.aws_secret_key and self.s3_bucket:
+            try:
+                import boto3
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=self.aws_access_key,
+                    aws_secret_access_key=self.aws_secret_key,
+                    region_name=self.aws_region
+                )
+                s3_key = f"{folder}/{uuid.uuid4()}-{filename}"
+                # Run standard blocking S3 call in executor to keep backend non-blocking
+                import asyncio
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    s3_client.upload_file,
+                    file_path,
+                    self.s3_bucket,
+                    s3_key
+                )
+                return f"https://{self.s3_bucket}.s3.{self.aws_region}.amazonaws.com/{s3_key}"
+            except Exception as e:
+                print(f"[StorageService] AWS S3 Upload failed: {e}")
 
-        return f"{BACKEND_URL}/uploads/{folder}/{dest_filename}"
+        # 2. Supabase Storage Upload
+        if self.supabase_url and self.supabase_key:
+            try:
+                import httpx
+                supabase_url_clean = self.supabase_url.rstrip('/')
+                s_filename = f"{uuid.uuid4()}-{filename}"
+                upload_url = f"{supabase_url_clean}/storage/v1/object/{self.supabase_bucket}/{folder}/{s_filename}"
+                headers = {
+                    "Authorization": f"Bearer {self.supabase_key}",
+                    "apikey": self.supabase_key,
+                    "Content-Type": content_type
+                }
+                with open(file_path, "rb") as f:
+                    async with httpx.AsyncClient() as client:
+                        response = await client.post(upload_url, content=f.read(), headers=headers)
+                        if response.status_code == 200:
+                            return f"{supabase_url_clean}/storage/v1/object/public/{self.supabase_bucket}/{folder}/{s_filename}"
+            except Exception as e:
+                print(f"[StorageService] Supabase Upload failed: {e}")
 
-    def delete_file(self, file_url: str) -> bool:
-        """
-        Deletes a file given its URL (as returned by upload_file).
-        Safe — ignores missing files.
+        # 3. Local Fallback Emulator (Production-Grade Local Path)
+        local_dir = Path("uploads") / folder
+        local_dir.mkdir(parents=True, exist_ok=True)
+        
+        dest_filename = f"{uuid.uuid4()}-{filename}"
+        dest_path = local_dir / dest_filename
+        shutil.copy2(file_path, dest_path)
+        
+        backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+        return f"{backend_url}/uploads/{folder}/{dest_filename}"
 
-        Returns: True if deleted, False if file not found.
-        """
-        try:
-            # Extract path from URL
-            prefix = f"{BACKEND_URL}/uploads/"
-            if file_url.startswith(prefix):
-                relative = file_url[len(prefix):]
-            elif file_url.startswith("/uploads/"):
-                relative = file_url[len("/uploads/"):]
-            else:
-                return False
-
-            file_path = UPLOAD_ROOT / relative
-            if file_path.exists():
-                file_path.unlink()
-                return True
-        except Exception as e:
-            print(f"[LocalStorage] Failed to delete {file_url}: {e}")
-        return False
-
-    def get_local_path(self, file_url: str) -> str | None:
-        """Returns the absolute filesystem path from a storage URL."""
-        try:
-            prefix = f"{BACKEND_URL}/uploads/"
-            if file_url.startswith(prefix):
-                relative = file_url[len(prefix):]
-                return str((UPLOAD_ROOT / relative).resolve())
-            elif file_url.startswith("/uploads/"):
-                relative = file_url[len("/uploads/"):]
-                return str((UPLOAD_ROOT / relative).resolve())
-        except Exception:
-            pass
-        return None
-
-
-storage_service = LocalStorageService()
+storage_service = CloudStorageService()

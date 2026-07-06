@@ -30,8 +30,7 @@ from typing import List, Tuple, Dict
 from services.llm_parser import (
     parse_resume_with_llm, parse_jd_with_llm,
     generate_candidate_intelligence,
-    get_groq_client, safe_json_loads,
-    _set_groq_rate_limited, _is_groq_rate_limited
+    safe_json_loads,
 )
 
 logger = logging.getLogger(__name__)
@@ -329,48 +328,29 @@ def compute_quality_score(candidate_profile: dict, raw_text: str) -> float:
 # AI Verification layer (Groq) - unchanged but fallback verdict is honest
 # ---------------------------------------------------------------------------
 def verify_with_recruiter_ai(candidate_profile: dict, jd_profile: dict) -> dict:
-    client = get_groq_client()
-    if not client:
-        return {}
-
-    prompt = f"""You are a professional human recruiter. Evaluate this candidate strictly and honestly.
-
-Candidate Profile:
-{json.dumps(candidate_profile, indent=2)}
-
-Hiring Requirements:
-{json.dumps(jd_profile, indent=2)}
-
-RULES:
-1. Only reference skills/experience explicitly in the Candidate Profile.
-2. Do NOT inflate or be lenient. A candidate missing 3+ required skills should be "Hold" or "Reject".
-3. Match your recommendation to actual skill coverage.
-
-JSON output:
-{{
-  "recommendation": "Strong Hire / Hire / Hold / Reject",
-  "reasoning": "2-sentence factual explanation.",
-  "strengths": ["string"],
-  "concerns": ["string"],
-  "final_recommendation_summary": "bulleted recap"
-}}
-"""
+    """Optional AI sanity-check on the heuristic result via Groq/LLaMA-3.3."""
     try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            response_format={"type": "json_object"},
-            timeout=30.0,
+        from services.llm_service import is_groq_available, llm_generate_json
+        if not is_groq_available():
+            return {}
+
+        import json as _json
+        prompt = (
+            "You are a professional technical recruiter. Evaluate this candidate strictly.\n\n"
+            f"Candidate Skills: {', '.join(candidate_profile.get('technical_skills', [])[:15])}\n"
+            f"Experience: {candidate_profile.get('total_experience_years', 0)} years\n"
+            f"Required Skills: {', '.join(jd_profile.get('required_skills', [])[:15])}\n"
+            f"Min Experience Required: {jd_profile.get('minimum_experience', 0)} years\n\n"
+            "RULES: Only reference the data above. Do NOT inflate scores. "
+            "A candidate missing 3+ required skills should be Hold or Reject.\n\n"
+            "Respond with ONLY this JSON (no markdown):\n"
+            '{"recommendation": "Strong Hire | Hire | Hold | Reject", '
+            '"reasoning": "2-sentence factual explanation.", '
+            '"strengths": [], "concerns": []}'
         )
-        return safe_json_loads(completion.choices[0].message.content)
+        return llm_generate_json(prompt, temperature=0.1, max_tokens=400)
     except Exception as e:
-        err_str = str(e).lower()
-        if "rate_limit" in err_str or "429" in str(e):
-            _set_groq_rate_limited(300)
-        elif "connection error" in err_str or "service unavailable" in err_str:
-            _set_groq_rate_limited(60)
-        logger.error(f"[Matching] AI Verification failed: {e}")
+        logger.error("[Matching] AI Verification failed: %s", e)
         return {}
 
 

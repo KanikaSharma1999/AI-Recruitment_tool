@@ -1,114 +1,109 @@
-# 📝 Job Resume Ranker & Feedback System
+# HireIQ — AI-Powered Recruiter OS
 
-An intelligent NLP-powered web app that ranks resumes based on how well they match a given job description — and gives constructive feedback on the best one. Built with **Streamlit**, **sentence-transformers**, and **Cohere's LLM**.
-
----
-
-## 🚀 Features
-
-- 📥 Upload a **job description** (`.txt`)  and multiple **resumes** (`.pdf` or `.txt`)
-- 📊 Ranks resumes by **semantic similarity**
-- 🤖 Generates **personalized feedback** for the top resume using **Cohere's LLM**
-- ⚡ Built with **modern NLP**: sentence embeddings + cosine similarity
-- 🌐 Simple, interactive web interface with **Streamlit**
+HireIQ is a production-ready, cloud-native Applicant Tracking System (ATS) and recruitment platform. It streamlines candidate workflows — from initial Job Description (JD) parsing to automated resume ranking, chatbot-assisted sourcing, video interviews with AI proctoring, and post-interview analysis reports.
 
 ---
 
-## 🧠 How It Works
+## 🚀 Key Features
 
-### 1. Data Upload & Preprocessing
-- Users upload a **job description** and **resumes**
-- Text is extracted and cleaned (via regex + PyPDF2)
-
-### 2. Semantic Ranking
-- Uses `all-MiniLM-L6-v2` from `sentence-transformers` to embed text
-- Computes **cosine similarity** between each resume and the job description
-- Resumes are sorted based on similarity score
-
-### 3. Feedback Generation
-- The top-matching resume is sent to **Cohere's `command-r-plus` API**
-- It returns a **constructive, job-specific review** with suggestions
+*   **Job Description (JD) Intelligence:** Automated parsing of JDs using **Groq Cloud API (LLaMA-3.3-70B)** to extract mandatory skills, certifications, domain filters, and target experience criteria.
+*   **Deep Resume Parsing:** Extracted PDF/DOCX text parsed via a hybrid engine combining rule-based heuristics, **spaCy Named Entity Recognition (NER)**, and **Groq LLaMA-3.3** timeline extraction.
+*   **Vector Search & Semantic Match:** Local text embeddings generated using **SentenceTransformers (`all-MiniLM-L6-v2`)** and indexed with **FAISS** for instant vector similarity search (zero cloud costs).
+*   **Weighted Scoring Engine:** A transparent, deterministic mathematical scoring formula combining:
+    *   Skills Match (40%)
+    *   Experience Alignment (25%)
+    *   Semantic Similarity (15%)
+    *   Project relevance (10%)
+    *   Certifications (5%)
+    *   Resume completeness (5%)
+*   **Recruiter Copilot Chatbot:** An interactive RAG chatbot allowing natural-language database search, candidate comparisons, and automated hiring query responses.
+*   **Live Video Room with Jitsi Meet:** Embeds peer-to-peer audio-video channels directly inside candidate and recruiter screens (no accounts required).
+*   **In-Browser AI Proctoring:** Client-side **MediaPipe FaceMesh** eye/gaze tracking, face presence detection, tab-switching triggers, and copy-paste monitors.
+*   **Post-Interview Analysis:** Speech-to-text audio transcription via **Groq Whisper** combined with LLaMA narrative synthesis to deliver behavioral assessments, integrity checks, and summary reports.
 
 ---
 
 ## 🛠 Tech Stack
 
-| Component         | Tool/Library                         |
-|------------------|--------------------------------------|
-| NLP Embedding    | `sentence-transformers`              |
-| Semantic Scoring | `scikit-learn` (cosine similarity)   |
-| PDF Parsing      | `PyPDF2`                             |
-| LLM Feedback     | `Cohere API`                         |
-| Frontend UI      | `Streamlit`                          |
-| Text Cleaning    | `re` (regular expressions)           |
+| Tier | Technology | Purpose |
+|------|------------|---------|
+| **Frontend** | React, Vite, Recharts, Lucide | Single-Page Application (SPA) dashboard |
+| **Backend** | FastAPI, Uvicorn, Pydantic | High-performance, asynchronous REST API |
+| **Database** | MongoDB Atlas, Motor | Document database for candidate metadata & status |
+| **Vector Index**| FAISS | Local, disk-persisted vector similarity engine |
+| **AI Layer** | Groq (LLaMA-3.3-70B), Groq Whisper | Language synthesis, parsing, speech-to-text |
+| **Local AI** | SentenceTransformers | Local token vector embedding generation |
+| **Proctoring** | MediaPipe FaceMesh | Browser-side gaze and face presence analysis |
+| **Automation** | APScheduler | Email reminders and notification dispatcher |
 
 ---
 
-## 🧪 How to Run Locally
+## 📂 Project Structure
 
-1. **Clone the repository:**
+```
+Job_resume_ranker-main/
+├── backend/
+│   ├── main.py                  # FastAPI server entry point & startup
+│   ├── database.py              # MongoDB Motor connections & models
+│   ├── auth.py                  # JWT authentication middleware
+│   ├── matching.py              # Weighted scoring engine & heuristics
+│   ├── resume_parser.py         # NLP text extraction & rule-based parser
+│   ├── reports.py               # PDF and Excel report generators
+│   ├── routes/                  # API routes (candidates, jobs, auth, chat, etc.)
+│   └── services/                # Backend services (LLM, FAISS, SMTP, Whisper)
+├── frontend/
+│   ├── src/
+│   │   ├── pages/               # Views (Dashboard, InterviewRoom, Candidates, etc.)
+│   │   ├── components/          # Reusable dashboard panels and cards
+│   │   └── context/             # React authentication contexts
+│   └── vite.config.js           # Vite development and proxy configuration
+├── start_platform.bat          # One-click platform startup batch script
+├── PROJECT_WORKFLOW.md          # Technical pipeline manual
+└── requirements.txt             # Clean backend python dependencies
+```
 
+---
+
+## ⚙️ Setup & Execution
+
+### Prerequisites
+*   Python 3.10+
+*   Node.js 18+
+*   MongoDB Atlas cluster connection string
+*   Groq API Key (get yours free at [console.groq.com](https://console.groq.com))
+
+### 1. Configuration
+Create a `.env` file inside the `backend/` directory using your credentials:
+```env
+MONGO_URI=mongodb+srv://<user>:<password>@cluster0.mongodb.net/ats_platform
+JWT_SECRET=your_jwt_signing_secret
+ENCRYPTION_KEY=g7EuM8O_-qJTOyVDZZTutI-JHTmgWfezf8kHNnH5eOQ=
+GROQ_API_KEY=gsk_your_groq_api_key
+FRONTEND_URL=http://localhost:5173
+SMTP_USERNAME=your_gmail_address
+SMTP_PASSWORD=your_gmail_app_password
+EMAIL_FROM=your_gmail_address
+```
+
+Create a `.env` file in the `frontend/` directory:
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_FRONTEND_URL=http://localhost:5173
+```
+
+### 2. Run the platform
+Double-click `start_platform.bat` or run:
 ```bash
-git clone https://github.com/yourusername/resume-ranker.git
-cd resume-ranker
-````
-
-2. **Install dependencies:**
-
-```bash
+# Start FastAPI backend
+cd backend
 pip install -r requirements.txt
+python main.py
+
+# Start React frontend
+cd ../frontend
+npm install
+npm run dev
 ```
 
-3. **Add your Cohere API key** in `cohere_feedback.py`:
-
-```python
-Set your API key using environment variables (recommended).
-```
-
-4. **Run the app:**
-
-```bash
-streamlit run app.py
-```
-
----
-
-## 📦 File Structure
-
-```
-resume-ranker/
-├── app.py                 # Main Streamlit app
-├── utils.py               # File reading, cleaning, ranking functions
-├── cohere_feedback.py     # LLM feedback generation
-├── requirements.txt
-└── README.md
-```
-
----
-
-## 🔮 Future Improvements
-
-* Generate feedback for **all** resumes, not just the top one
-* Visualize **skill/keyword overlaps**
-* Export **PDF reports**
-* Support **.docx** files
-* Add **user accounts** and session history
-
----
-
-## 🎓 Learning Outcomes
-
-This project demonstrates how **NLP + AI** can:
-
-* Automate manual HR processes
-* Provide fair and semantic resume screening
-* Help candidates improve applications with contextual feedback
-
----
-
-## 📌 Live Demo
-
-👉 Try it here: [Job_Resume_Ranker_App 🌐](https://jobresumeranker-lfq6bnfxuuh9gns2xarwmw.streamlit.app/)
-
----
-
+Open `http://localhost:5173` to access the Recruiter Dashboard.
+For candidates to join interviews from other machines, set `FRONTEND_URL` to your network IP (e.g. `http://192.168.1.5:5173`) or an active ngrok tunnel.

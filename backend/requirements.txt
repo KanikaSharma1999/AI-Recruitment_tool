@@ -10,24 +10,13 @@ reportlab==4.2.0
 python-dotenv==1.0.1
 pydantic==2.7.1
 PyPDF2>=3.0.0
-pdfplumber>=0.10.0
-PyMuPDF>=1.24.0
 spacy>=3.7.0
 sentence-transformers>=2.6.0
 rapidfuzz>=3.0.0
 faiss-cpu>=1.7.0
 numpy>=1.25.0
-opencv-python-headless>=4.8.0
-mediapipe>=0.10.0
-librosa>=0.10.0
-webrtcvad>=2.0.10
-scikit-learn>=1.3.0
-openai-whisper>=20231117
 mammoth>=1.6.0
-python-magic-bin; platform_system == 'Windows'
-python-magic; platform_system != 'Windows'
 cryptography==42.0.5
 APScheduler==3.10.4
 openpyxl==3.1.2
-httpx>=0.27.0
-nltk>=3.8.0
+groq==1.2.0

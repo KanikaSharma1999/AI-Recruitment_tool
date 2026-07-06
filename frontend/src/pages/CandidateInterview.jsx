@@ -50,7 +50,15 @@ export default function CandidateInterview() {
         setCandidateData(res.data);
         setLoading(false);
       } catch (err) {
-        setErrorMsg(err.response?.data?.detail || 'Invalid or expired secure interview token');
+        // Distinguish network errors from invalid token errors
+        if (!err.response) {
+          // Network error — backend unreachable
+          setErrorMsg(
+            'Unable to connect to the interview server. Please make sure you have a stable internet connection and try again. If the problem persists, contact your recruiter for a new interview link.'
+          );
+        } else {
+          setErrorMsg(err.response?.data?.detail || 'This interview link is invalid or has expired. Please contact your recruiter for a new link.');
+        }
         setLoading(false);
       }
     }
@@ -554,17 +562,33 @@ export default function CandidateInterview() {
   }
 
   if (errorMsg) {
+    const isNetworkError = errorMsg.includes('connect') || errorMsg.includes('internet') || errorMsg.includes('server');
     return (
       <div style={{ display: 'flex', flex: 1, height: '100vh', background: '#090d16', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Poppins, sans-serif' }}>
-        <div style={{ maxWidth: 440, width: '100%', background: '#0f172a', border: '1px solid #fee2e2', borderRadius: 16, padding: 32, textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-          <ShieldAlert size={48} className="text-red-500" style={{ margin: '0 auto 16px' }} />
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: '#fca5a5', marginBottom: 12 }}>Session Invalid</h2>
-          <p style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.6, marginBottom: 24 }}>{errorMsg}</p>
-          <div style={{ fontSize: 11, color: '#64748b' }}>Please contact your recruiting coordinator or request a new invitation.</div>
+        <div style={{ maxWidth: 480, width: '100%', background: '#0f172a', border: `1px solid ${isNetworkError ? '#fde68a' : '#fee2e2'}`, borderRadius: 16, padding: 32, textAlign: 'center', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>{isNetworkError ? '🌐' : '🔒'}</div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: isNetworkError ? '#fcd34d' : '#fca5a5', marginBottom: 12 }}>
+            {isNetworkError ? 'Connection Problem' : 'Session Invalid'}
+          </h2>
+          <p style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.7, marginBottom: 24 }}>{errorMsg}</p>
+          {isNetworkError ? (
+            <button
+              onClick={() => window.location.reload()}
+              style={{ width: '100%', padding: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, marginBottom: 12 }}
+            >
+              🔄 Try Again
+            </button>
+          ) : null}
+          <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.6 }}>
+            {isNetworkError
+              ? 'Make sure your internet is working. The interview session must be active for you to connect.'
+              : 'Please contact your recruiting coordinator or request a new invitation link.'}
+          </div>
         </div>
       </div>
     );
   }
+
 
   if (inCall) {
     return (

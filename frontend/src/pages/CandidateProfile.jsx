@@ -91,13 +91,16 @@ export default function CandidateProfile() {
   const rec     = hs.recommendation || c.ai_verdict || 'Hold';
   const expYrs  = c.total_experience_years || c.experience_years || c.experience || 0;
 
-  // Get dynamic frontend base URL (prioritizing VITE_FRONTEND_URL for external sharing/tunnels)
-  const getBaseUrl = () => {
-    let url = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
-    if (url && url.endsWith('/')) {
-      url = url.slice(0, -1);
-    }
-    return url;
+  // Build the shareable candidate join URL.
+  // Priority: backend-generated candidate_join_url (uses FRONTEND_URL env var)
+  //           → VITE_FRONTEND_URL (set in frontend/.env for tunnels/production)
+  //           → window.location.origin (last resort, works only locally)
+  const getCandidateJoinUrl = (token) => {
+    const backendUrl = c?.interview?.candidate_join_url;
+    if (backendUrl) return backendUrl;
+    let base = import.meta.env.VITE_FRONTEND_URL || window.location.origin;
+    if (base.endsWith('/')) base = base.slice(0, -1);
+    return `${base}/candidate-interview/${token}`;
   };
   
   // Education — handle structured + legacy string formats
@@ -114,6 +117,30 @@ export default function CandidateProfile() {
   const rawProj = c.projects_structured?.length ? c.projects_structured : (c.projects || []).map(p => ({ name: typeof p === 'object' ? p.name||'' : p, description: typeof p === 'object' ? p.description||'' : '', technologies: typeof p === 'object' ? p.technologies||[] : [] }));
   const projArr = rawProj.filter(p => { const n = p.name||''; return n.length > 5 && !/^[A-Z\s\.]+$/.test(n) || (p.description && p.description.length > 10); });
   
+  // ── Interview join window helpers ──────────────────────────────────────
+  const getInterviewJoinStatus = () => {
+    if (!c.interview?.date || !c.interview?.time) return { canJoin: false, expired: false, label: '' };
+    try {
+      const scheduledDt = new Date(`${c.interview.date}T${c.interview.time}:00`);
+      const now = new Date();
+      const diffMs = now - scheduledDt; // positive = past scheduled time
+      const fifteenMin = 15 * 60 * 1000;
+      if (diffMs > fifteenMin) return { canJoin: false, expired: true, label: 'Session window expired (15 min past scheduled time)' };
+      if (diffMs < -fifteenMin) return { canJoin: false, expired: false, label: `Starts at ${c.interview.time}` };
+      return { canJoin: true, expired: false, label: '' };
+    } catch { return { canJoin: false, expired: false, label: '' }; }
+  };
+
+  // Derive the correct interview display status from candidate status
+  const getInterviewDisplayStatus = () => {
+    const st = c.status || '';
+    if (st === 'interview_completed' || st === 'interview_analyzed' || st === 'interview_analyzing') return 'completed';
+    if (st === 'interview_incomplete') return 'incomplete';
+    if (st === 'interview_live') return 'live';
+    if (c.interview?.status) return c.interview.status;
+    return 'scheduled';
+  };
+
   const rerank = async () => {
     setReranking(true);
     try { const r = await API.post(`/candidates/rerank/${id}`); setC(r.data); toast.success(' AI re-analysis complete!'); }
@@ -353,26 +380,41 @@ export default function CandidateProfile() {
                   <div style={{padding:'10px 12px',background:'#f8fafc',borderRadius:8,border:'1px solid #e2e8f0',marginBottom:10}}>
                     <div style={{fontSize:12,fontWeight:700,color:'#1e293b',marginBottom:2}}>Technical Interview</div>
                     <div style={{fontSize:11,color:'#64748b'}}>{c.interview.date} · {c.interview.time}</div>
-                    <div style={{marginTop:4}}><span className={`cp-risk-pill ${c.interview.status==='completed'?'risk-low':'risk-med'}`} style={{fontSize:10}}>{(c.interview.status||'Scheduled').toUpperCase()}</span></div>
+                    <div style={{marginTop:4}}><span className={`cp-risk-pill ${getInterviewDisplayStatus()==='completed'?'risk-low':getInterviewDisplayStatus()==='live'?'risk-high':'risk-med'}`} style={{fontSize:10}}>{getInterviewDisplayStatus().toUpperCase()}</span></div>
                   </div>
-                  {c.interview.meeting_link && (
-                    <div style={{display:'flex',gap:8,flexDirection:'column'}}>
-                      <a href={`/interview-room/${id}`} target="_blank" rel="noreferrer" className="cp-footer-btn primary" style={{textDecoration:'none',fontSize:11.5,display:'flex',justifyContent:'center',alignItems:'center'}}>🔗 Join Session</a>
-                      {c.interview.secure_token && (
-                        <button 
-                          onClick={() => {
-                            const link = `${getBaseUrl()}/candidate-interview/${c.interview.secure_token}`;
-                            navigator.clipboard.writeText(link);
-                            toast.success('Candidate invite link copied!');
-                          }}
-                          className="cp-footer-btn"
-                          style={{fontSize:11.5,display:'flex',justifyContent:'center',alignItems:'center',background:'#f1f5f9',color:'#475569',border:'1px solid #cbd5e1'}}
-                        >
-                           Copy Invite Link
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {c.interview.meeting_link && (() => {
+                    const joinStatus = getInterviewJoinStatus();
+                    const displayStatus = getInterviewDisplayStatus();
+                    const isCompleted = displayStatus === 'completed';
+                    return (
+                      <div style={{display:'flex',gap:8,flexDirection:'column'}}>
+                        {isCompleted ? (
+                          <div style={{padding:'10px 12px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,fontSize:12,color:'#16a34a',fontWeight:600,textAlign:'center'}}>
+                            ✅ Interview Completed
+                          </div>
+                        ) : joinStatus.expired ? (
+                          <div style={{padding:'10px 12px',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:8,fontSize:11.5,color:'#dc2626',fontWeight:600,textAlign:'center'}}>
+                            ⏱ {joinStatus.label}
+                          </div>
+                        ) : (
+                          <a href={`/interview-room/${id}`} target="_blank" rel="noreferrer" className="cp-footer-btn primary" style={{textDecoration:'none',fontSize:11.5,display:'flex',justifyContent:'center',alignItems:'center'}}>🔗 Join Session</a>
+                        )}
+                        {c.interview.secure_token && !isCompleted && (
+                          <button 
+                            onClick={() => {
+                              const link = getCandidateJoinUrl(c.interview.secure_token);
+                              navigator.clipboard.writeText(link);
+                              toast.success('Candidate invite link copied!');
+                            }}
+                            className="cp-footer-btn"
+                            style={{fontSize:11.5,display:'flex',justifyContent:'center',alignItems:'center',background:'#f1f5f9',color:'#475569',border:'1px solid #cbd5e1'}}
+                          >
+                             Copy Invite Link
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               ) : <div style={{fontSize:12,color:'#94a3b8',fontStyle:'italic',textAlign:'center',padding:'20px 0'}}>No interview scheduled.<br/><button className="cp-footer-btn primary" style={{marginTop:8,fontSize:11.5}} onClick={()=>setShowInterview(true)}>Schedule Now</button></div>}
             </div>
@@ -713,7 +755,7 @@ export default function CandidateProfile() {
                         {c.interview.secure_token && c.interview.status !== 'completed' && (
                           <button 
                             onClick={() => {
-                              const link = `${getBaseUrl()}/candidate-interview/${c.interview.secure_token}`;
+                              const link = getCandidateJoinUrl(c.interview.secure_token);
                               navigator.clipboard.writeText(link);
                               toast.success('Candidate invite link copied!');
                             }}

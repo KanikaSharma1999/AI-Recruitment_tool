@@ -5,7 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    allowedHosts: ['lively-cortex-obstacle.ngrok-free.dev', 'localhost', '127.0.0.1'],
+    host: true,           // Expose on all network interfaces (0.0.0.0) — allows other devices to connect
+    port: 5173,
+    allowedHosts: true,  // Disable host validation check for ngrok/dynamic tunnels in Vite 6
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',

@@ -523,9 +523,7 @@ async def compare_insights(
     current_user=Depends(get_current_user),
 ):
     from fastapi.responses import StreamingResponse
-    from groq import AsyncGroq
-    import os
-    import traceback
+    from services.llm_service import is_groq_available, llm_stream
     id_list = [i.strip() for i in ids.split(",") if i.strip()][:3]
     if len(id_list) < 2:
         raise HTTPException(status_code=400, detail="Provide at least 2 candidate IDs")
@@ -537,69 +535,63 @@ async def compare_insights(
             if c: candidates.append(c)
         except Exception:
             continue
-            
+
     if len(candidates) < 2:
         raise HTTPException(status_code=404, detail="Could not find enough candidates")
-        
+
     job_id = candidates[0].get("job_id")
     job = None
     if job_id:
-        job = await jobs_col.find_one({"_id": ObjectId(job_id)})
-        
+        try:
+            job = await jobs_col.find_one({"_id": ObjectId(job_id)})
+        except Exception:
+            pass
+
     prompt = "You are an expert Enterprise AI Recruiter Copilot.\n"
-    prompt += f"Please provide a final hiring recommendation comparing the following {len(candidates)} candidates"
+    prompt += f"Compare {len(candidates)} candidates"
     if job:
-        prompt += f" for the role of '{job.get('title')}'.\n\n"
+        prompt += f" for the role of '{job.get('title', 'this role')}'.\n\n"
     else:
         prompt += ".\n\n"
-        
+
     for c in candidates:
+        analysis = c.get("ai_analysis", {})
         prompt += f"Candidate: {c.get('name', 'Unknown')}\n"
         prompt += f"AI Match Score: {c.get('score', 0):.0f}%\n"
         prompt += f"Experience: {c.get('experience_years', 0):.0f} years\n"
         prompt += f"Top Skills: {', '.join(c.get('skills', [])[:5])}\n"
-        analysis = c.get("ai_analysis", {})
         if analysis:
-            prompt += f"Interview Comm. Score: {analysis.get('communication_score', c.get('communication_score', 'N/A'))}\n"
-            prompt += f"Interview Confidence: {analysis.get('confidence_score', 'N/A')}\n"
+            prompt += f"Interview Communication: {analysis.get('communication', 'N/A')}\n"
             prompt += f"Behavioral Risk: {analysis.get('cheating_risk', 'Low')}\n"
-        prompt += f"Missing Skills: {', '.join(c.get('missing_skills', [])[:3])}\n"
-        prompt += "\n"
-        
-    prompt += "Instructions:\n"
-    prompt += "1. Write a 2-3 sentence extremely sharp and concise comparison.\n"
-    prompt += "2. Explicitly name the candidates.\n"
-    prompt += "3. Highlight who is the stronger technical fit, and who has better communication or lower behavioral risk.\n"
-    prompt += "4. Conclude with a clear bottom-line recommendation (e.g. who to hire or advance).\n"
-    prompt += "Keep it strictly professional and recruiter-focused. Do not output any markdown headers, just the text."
+        prompt += f"Missing Skills: {', '.join(c.get('missing_skills', [])[:3])}\n\n"
 
-    try:
-        groq_client = AsyncGroq(
-            api_key=os.environ.get("GROQ_API_KEY")
-        )
-    except Exception as init_err:
-        import logging
-        logging.error(f"[GROQ ERROR] Initialization failed:\n{traceback.format_exc()}")
-        async def err_gen():
-            yield f"⚠️ Backend Configuration Error: Could not initialize Groq client. Check API key."
-        return StreamingResponse(err_gen(), media_type="text/plain")
+    prompt += (
+        "Write a 2-3 sentence sharp, concise comparison naming each candidate explicitly. "
+        "Highlight technical fit, communication, and behavioral risk. "
+        "Conclude with a clear hiring recommendation. "
+        "Professional tone only. No markdown headers."
+    )
+
+    if not is_groq_available():
+        # Graceful template fallback when Groq is not configured
+        names = [c.get("name", "Candidate") for c in candidates]
+        scores = [c.get("score", 0) for c in candidates]
+        best = names[scores.index(max(scores))]
+        async def fallback_gen():
+            yield (
+                f"Based on AI match scores, {best} appears to be the strongest candidate "
+                f"with the highest score ({max(scores):.0f}%). "
+                "Review individual profiles for detailed strengths and missing skills. "
+                "(GROQ_API_KEY not configured — add it to .env for AI-powered comparison.)"
+            )
+        return StreamingResponse(fallback_gen(), media_type="text/plain")
 
     async def generate():
         try:
-            response = await groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                stream=True,
-                temperature=0.3,
-                max_tokens=250
-            )
-            async for chunk in response:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
+            async for token in llm_stream(prompt, temperature=0.3):
+                yield token
         except Exception as e:
-            err_msg = f"\n\n⚠️ AI Error: {str(e)}"
-            print("[GROQ ERROR] Full Traceback:\n", traceback.format_exc())
-            yield err_msg
+            yield f"\n\n⚠️ AI Error: {str(e)}"
 
     return StreamingResponse(generate(), media_type="text/plain")
 
@@ -633,17 +625,27 @@ async def update_status(
     from database import jobs_col
     from services.email_service import send_email, get_status_update_template
     
-    valid = ["applied", "screening", "shortlisted", "interview_scheduled", "interview_completed", "offered", "hired", "rejected"]
+    # All valid statuses including interview sub-states
+    valid = [
+        "applied", "screening", "shortlisted",
+        "interview_scheduled", "interview_live", "interview_completed",
+        "interview_analyzing", "interview_analyzed", "interview_incomplete",
+        "interview_missed", "offered", "hired", "rejected"
+    ]
+    # Map all accepted values to their canonical storage value
     legacy_map = {
         "pending": "applied",
         "applied": "applied",
         "screening": "screening",
         "shortlisted": "shortlisted",
         "interview_scheduled": "interview_scheduled",
-        "interview_live": "interview_scheduled",
-        "interview_missed": "interview_scheduled",
+        "interview_live": "interview_live",
+        "interview_missed": "interview_missed",
         "interviewed": "interview_completed",
         "interview_completed": "interview_completed",
+        "interview_analyzing": "interview_analyzing",
+        "interview_analyzed": "interview_analyzed",
+        "interview_incomplete": "interview_incomplete",
         "selected": "offered",
         "offered": "offered",
         "hired": "hired",
@@ -652,7 +654,7 @@ async def update_status(
     }
     
     status_lower = update.status.lower().strip()
-    stage = legacy_map.get(status_lower)
+    stage = legacy_map.get(status_lower, status_lower if status_lower in valid else None)
     if not stage:
         raise HTTPException(status_code=400, detail=f"Status must be one of: {valid}")
 
@@ -832,6 +834,15 @@ async def get_candidate_resume(candidate_id: str):
             file_path = search_results[0]
             logger.info(f"Fuzzy match found: {file_path}")
         else:
+            # Fallback: serve candidate's raw_text as a plain text response
+            raw_text = candidate.get("raw_text", "")
+            if raw_text:
+                from fastapi.responses import Response
+                return Response(
+                    content=raw_text,
+                    media_type="text/plain",
+                    headers={"Content-Disposition": f"inline; filename={candidate.get('filename', 'resume.txt')}"}
+                )
             raise HTTPException(status_code=404, detail=f"Resume file not found at {file_path.name}")
 
     ext = file_path.suffix.lower()

@@ -5,13 +5,11 @@ import numpy as np
 from bson import ObjectId
 from datetime import datetime, timezone
 from database import candidates_col, jobs_col, interview_sessions_col
-from services.ollama_client import ollama_generate
 
 class MultimodalAnalyzer:
     """
     Enterprise-grade AI Interview Analysis Engine.
-    Combines web-cam face tracking statistics and audio transcripts with Mistral 7B (local Ollama).
-    Cost: ₹0 — all inference runs on local hardware.
+    Combines web-cam face tracking statistics and audio transcripts with Groq LLM inference.
     """
     def __init__(self, face_stats, transcripts, resume_score, job_title="Software Engineer", job_description="", total_duration_secs=None):
         self.face_stats = face_stats or []
@@ -225,93 +223,102 @@ class MultimodalAnalyzer:
         }
 
     async def synthesize_analysis(self, heuristics, candidate_name):
+        """Generate LLM synthesis using Groq/LLaMA-3.3. Falls back to heuristics if unavailable."""
+        from services.llm_service import is_groq_available, llm_generate_json_async
+
         full_text = " ".join(self.transcripts)
         if not full_text.strip():
             full_text = "[No verbal transcript recorded during the interview]"
 
         prompt = f"""
 You are an Enterprise AI Interview Intelligence Engine.
-Generate a comprehensive, recruiter-ready interview analysis report based on the candidate's speech transcript and webcam eye-tracking heuristics.
+Generate a comprehensive, recruiter-ready interview analysis report.
 
 CANDIDATE DETAILS:
 - Candidate Name: {candidate_name}
 - Target Job: {self.job_title}
-- Job Description: {self.job_description[:400]}
+- Job Description: {self.job_description[:600]}
 
 INTERVIEW HEURISTICS:
-- Average Gaze Eye Contact: {heuristics['eye_contact']}%
+- Gaze Eye Contact: {heuristics['eye_contact']}%
 - Visual Attention Score: {heuristics['attention_score']}%
 - Verbal Communication Score: {heuristics['comm_score']}%
 - Candidate Speaking Ratio: {heuristics['speaking_ratio']}%
 - Word Count: {heuristics['word_count']} words
-- Filler Words Count: {heuristics['filler_count']}
-- Integrity Risk Score: {heuristics['risk_score']}% (Status: {heuristics['cheating_risk']})
+- Filler Words: {heuristics['filler_count']}
+- Integrity Risk Score: {heuristics['risk_score']}% ({heuristics['cheating_risk']})
 
 TRANSCRIPT SAMPLE:
 "{full_text[:3000]}"
 
-Return ONLY valid JSON, no markdown, no explanation:
+Respond with ONLY a valid JSON object (no markdown). Schema:
 {{
   "recommendation": "Strong Hire | Hire | Hold | Reject",
-  "verdict": "string",
-  "reasoning": "string",
+  "verdict": "Brief summary sentence of the hiring decision.",
+  "reasoning": "Concise recruiter-ready explanation referencing transcript evidence.",
   "communication_analysis": {{
     "clarity_score": 0,
     "confidence_score": 0,
     "professionalism": 0,
     "engagement": 0,
     "speech_pace": "Normal",
-    "hesitation_detection": "Low | Moderate | High",
+    "hesitation_detection": "Moderate",
     "filler_word_detection": {{"um_uh_count": 0, "like_count": 0, "other_fillers_count": 0}},
-    "sentiment_analysis": "Positive | Neutral | Negative",
-    "response_quality": "High | Medium | Low",
-    "evidence_quote": "string"
+    "sentiment_analysis": "Neutral",
+    "response_quality": "Medium",
+    "evidence_quote": "A direct quote from the transcript."
   }},
   "behavioral_analysis": {{
     "eye_contact": 0,
     "attentiveness": 0,
     "emotional_stability": 0,
-    "honesty_indicators": "High | Medium | Low",
-    "stress_indicators": "High | Medium | Low",
-    "distraction_detection": "None | Minor distraction | Highly distracted",
+    "honesty_indicators": "Medium",
+    "stress_indicators": "Medium",
+    "distraction_detection": "None",
     "engagement_score": 0,
     "emotion_timeline": [],
     "suspicious_behavior_flags": [],
-    "integrity_evidence": "string"
+    "integrity_evidence": "Description of webcam attention and gaze stability."
   }},
   "interview_intelligence": {{
     "interviewer_speaking_ratio": 0,
     "candidate_speaking_ratio": 0,
     "technical_depth_estimation": 0,
-    "leadership_indicators": "Strong | Average | Weak",
-    "communication_indicators": "Excellent | Good | Average | Poor",
-    "professionalism_indicators": "High | Medium | Low"
+    "leadership_indicators": "Average",
+    "communication_indicators": "Good",
+    "professionalism_indicators": "Medium"
   }},
   "technical_evaluation": {{
     "technical_understanding": 0,
     "depth_of_answers": 0,
-    "leadership_indicators": "Strong | Average | Weak",
-    "problem_solving_quality": "Exceptional | Good | Average | Basic",
-    "evidence_quote": "string"
+    "leadership_indicators": "Average",
+    "problem_solving_quality": "Average",
+    "evidence_quote": "A direct quote from the transcript."
   }}
 }}
 """
 
         try:
-            res = await ollama_generate(prompt, temperature=0.3, max_tokens=1200, expect_json=True)
-            if res:
-                fallback = self.get_fallback_synthesis(heuristics, candidate_name)
-                def deep_merge(d1, d2):
-                    for k, v in d2.items():
-                        if k not in d1 or d1[k] is None:
-                            d1[k] = v
-                        elif isinstance(v, dict) and isinstance(d1.get(k), dict):
-                            deep_merge(d1[k], v)
-                    return d1
-                return deep_merge(res, fallback)
+            if not is_groq_available():
+                logger.info("[AIAnalysis] Groq unavailable — using heuristic fallback.")
+                return self.get_fallback_synthesis(heuristics, candidate_name)
+
+            res = await llm_generate_json_async(prompt, temperature=0.3, max_tokens=1200)
+
+            # Deep-merge with fallback to fill any missing fields
+            fallback = self.get_fallback_synthesis(heuristics, candidate_name)
+            def deep_merge(d1, d2):
+                for k, v in d2.items():
+                    if k not in d1 or d1[k] is None:
+                        d1[k] = v
+                    elif isinstance(v, dict) and isinstance(d1.get(k), dict):
+                        deep_merge(d1[k], v)
+                return d1
+            return deep_merge(res, fallback)
+
         except Exception as e:
-            print(f"[AI Analysis] Ollama synthesis failed, falling back. Error: {e}")
-        return self.get_fallback_synthesis(heuristics, candidate_name)
+            logger.warning("[AIAnalysis] Groq synthesis failed, using fallback: %s", e)
+            return self.get_fallback_synthesis(heuristics, candidate_name)
 
     def get_fallback_synthesis(self, heuristics, candidate_name):
         score = (heuristics["attention_score"] + heuristics["comm_score"]) / 2

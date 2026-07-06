@@ -381,6 +381,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ATS Platform API", version="1.0.0", lifespan=lifespan)
 
+# Mount local uploads directory
+from fastapi.staticfiles import StaticFiles
+os.makedirs("uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 # ─── Health Check Endpoints ──────────────────────────────────────────────────
 
 @app.get("/health")
@@ -453,27 +458,26 @@ async def health_details():
     }
 
 
-# CORS configuration including environment-defined origins
-origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
-env_frontend = os.getenv("FRONTEND_URL")
-if env_frontend:
-    origins.append(env_frontend)
-env_vite_frontend = os.getenv("VITE_FRONTEND_URL")
-if env_vite_frontend:
-    origins.append(env_vite_frontend)
-
-# Ensure both trailing and non-trailing slash versions are allowed
-final_origins = []
-for o in origins:
-    o_stripped = o.strip()
-    if not o_stripped:
-        continue
-    final_origins.append(o_stripped)
-    if o_stripped.endswith("/"):
-        final_origins.append(o_stripped[:-1])
-    else:
-        final_origins.append(o_stripped + "/")
-final_origins = list(set(final_origins))
+# ── CORS ─────────────────────────────────────────────────────────────────────
+# Dev defaults — these are ONLY used when FRONTEND_URL / VITE_FRONTEND_URL
+# are NOT set in .env.  Set those variables for any shared/production deploy.
+_dev_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+]
+_env_origins = [
+    os.getenv("FRONTEND_URL", ""),
+    os.getenv("VITE_FRONTEND_URL", ""),
+]
+_all = _dev_origins + [u.rstrip("/") for u in _env_origins if u.strip()]
+# Include both trailing-slash and non-trailing-slash variants
+final_origins = list({
+    variant
+    for origin in _all
+    for variant in (origin.rstrip("/"), origin.rstrip("/") + "/")
+    if origin.strip()
+})
 
 app.add_middleware(
     CORSMiddleware,
@@ -557,49 +561,34 @@ async def test_db_connection():
 
 @app.get("/debug/groq-test")
 async def debug_groq_test():
-    """Direct Groq credentials and model execution diagnostics."""
-    import os
-    import traceback
-    from groq import AsyncGroq
-    from dotenv import load_dotenv
+    """Groq connectivity and model execution diagnostics."""
+    from services.llm_service import is_groq_available, llm_generate, GROQ_MODEL, GROQ_API_KEY
 
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
-    api_key = os.getenv("GROQ_API_KEY")
-    
     diagnostics = {
-        "groq_api_key_exists": bool(api_key),
-        "groq_api_key_prefix": api_key[:10] if api_key else None,
-        "model_used": "llama-3.3-70b-versatile",
-        "base_url": "https://api.groq.com/openai/v1"
+        "groq_model":     GROQ_MODEL,
+        "groq_key_set":   bool(GROQ_API_KEY and "your_groq" not in GROQ_API_KEY),
+        "groq_available": is_groq_available(),
     }
-    
-    if not api_key:
+
+    if not diagnostics["groq_available"]:
         return {
             "success": False,
-            "error": "GROQ_API_KEY is not set in environment variables.",
-            "diagnostics": diagnostics
+            "error": "GROQ_API_KEY not configured. Add it to your .env file.",
+            "diagnostics": diagnostics,
         }
-        
+
     try:
-        client = AsyncGroq(api_key=api_key)
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": "Say hello"}],
-            max_tokens=20,
-            temperature=0.2
-        )
+        response = llm_generate("Say hello in one word.", max_tokens=20, temperature=0.0)
         return {
             "success": True,
-            "response": response.choices[0].message.content.strip(),
-            "diagnostics": diagnostics
+            "response": response,
+            "diagnostics": diagnostics,
         }
     except Exception as e:
-        tb = traceback.format_exc()
         return {
             "success": False,
             "error": str(e),
-            "traceback": tb,
-            "diagnostics": diagnostics
+            "diagnostics": diagnostics,
         }
 
 
@@ -616,8 +605,6 @@ from routes.settings import router as settings_router
 app.include_router(settings_router)
 from routes.auth import router as auth_router
 app.include_router(auth_router)
-from routes.interview_tokens import router as interview_tokens_router
-app.include_router(interview_tokens_router)
 
 
 def serialize(doc: dict) -> dict:
@@ -1041,28 +1028,39 @@ async def admin_rerank_all(
             if not raw_text:
                 raw_text = cand.get("raw_text", "")
                 
-            # 3. Rerun parser
-            try:
-                candidate_profile = parse_resume_with_llm(raw_text, cand.get("filename", "resume.pdf"))
-                print(f"[PARSER] Ran resume parser for candidate: {cand.get('name')}")
-            except Exception as pe:
-                print(f"[PARSER ERROR] Parsing failed for candidate {cand.get('name')}: {pe}")
-                candidate_profile = {}
-                
-            prepared_cand = {
-                **cand,
-                **candidate_profile,
-                "raw_text": raw_text,
-            }
-            # Remove cached timeline to force rerun extraction logic inside rank_all_resumes
-            prepared_cand.pop("employment_timeline", None)
+            # 3. Check if candidate is already parsed (has valid timeline and skills)
+            timeline = cand.get("employment_timeline", [])
+            is_dummy = False
+            if timeline and len(timeline) == 1:
+                t_item = timeline[0]
+                if isinstance(t_item, dict) and t_item.get("company") == "Previous Employment":
+                    is_dummy = True
+                    
+            if not timeline or is_dummy or not cand.get("skills"):
+                try:
+                    candidate_profile = parse_resume_with_llm(raw_text, cand.get("filename", "resume.pdf"))
+                    print(f"[PARSER] Ran resume parser for candidate: {cand.get('name')}")
+                except Exception as pe:
+                    print(f"[PARSER ERROR] Parsing failed for candidate {cand.get('name')}: {pe}")
+                    candidate_profile = {}
+                prepared_cand = {
+                    **cand,
+                    **candidate_profile,
+                    "raw_text": raw_text,
+                }
+                prepared_cand.pop("employment_timeline", None)
+            else:
+                prepared_cand = {
+                    **cand,
+                    "raw_text": raw_text,
+                }
             prepared_candidates.append(prepared_cand)
             
         if not prepared_candidates:
             continue
             
         # 4. Rerun embeddings & 5. Rerun ranking
-        ranked = await rank_all_resumes(jd_text, prepared_candidates)
+        ranked = await rank_all_resumes(jd_text, prepared_candidates, job=job)
         
         for item in ranked:
             cid = item["_id"]

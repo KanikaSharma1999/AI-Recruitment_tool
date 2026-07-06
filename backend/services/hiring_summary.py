@@ -3,7 +3,8 @@ Hiring Summary Generator
 ========================
 Generates recruiter-grade, evidence-based hiring summaries for ranked candidates.
 Guarantees MINIMUM 3 detailed, evidence-based points per strengths/weaknesses/risks.
-Uses Cohere if configured; falls back to a rich, human-sounding template engine.
+Uses Groq/LLaMA-3.3 for narrative enhancement; falls back to a rich template engine.
+No cloud LLM dependency.
 """
 import os
 import logging
@@ -310,27 +311,24 @@ def _template_summary(
     }
 
 
-async def _cohere_summary(
+async def _groq_narrative(
     name: str,
     job_title: str,
     final_score: float,
     matched_skills: list,
     missing_skills: list,
     experience_years: float,
-    resume_quality: float,
     recommendation: str,
 ) -> Optional[str]:
-    """Try to get an LLM-generated recruiter narrative. Returns None on failure."""
-    api_key = os.getenv("COHERE_API_KEY")
-    if not api_key or api_key == "your_cohere_key":
-        return None
+    """Try to get a Groq/LLaMA recruiter narrative. Returns None on failure."""
     try:
-        import cohere
-        client = cohere.Client(api_key, timeout=10)
+        from services.llm_service import is_groq_available, llm_generate_async
+        if not is_groq_available():
+            return None
         matched_str = ", ".join(matched_skills[:5]) or "none"
         missing_str = ", ".join(missing_skills[:4]) or "none"
         prompt = (
-            f"You are a senior recruiter writing evaluation notes for a hiring manager.\n"
+            f"You are a senior recruiter writing concise evaluation notes for a hiring manager.\n"
             f"Candidate: {name}\n"
             f"Role: {job_title}\n"
             f"AI Match Score: {final_score:.0f}%\n"
@@ -338,20 +336,15 @@ async def _cohere_summary(
             f"Missing Skills: {missing_str}\n"
             f"Experience: {experience_years:.0f} years\n"
             f"Recommendation: {recommendation}\n\n"
-            "Write a concise, professional 2-sentence recruiter summary explaining the recommendation. "
-            "Reference specific skills and experience. Do not use generic phrases like 'based on the data'. "
-            "Write as a human recruiter would in their notes. Be direct and specific."
+            "Write exactly 2 concise, professional sentences explaining why this recommendation was made. "
+            "Reference the specific matched and missing skills by name. "
+            "Be direct and specific. Do not use phrases like 'based on the data' or 'the analysis shows'."
         )
-        resp = client.chat(
-            model="command-r-plus-08-2024",
-            message=prompt,
-            temperature=0.4,
-            max_tokens=150,
-        )
-        text = resp.text.strip()
+        text = await llm_generate_async(prompt, temperature=0.3, max_tokens=150)
+        text = text.strip()
         return text if len(text) > 30 else None
     except Exception as e:
-        logger.debug(f"[HiringSummary] Cohere unavailable: {e}")
+        logger.debug("[HiringSummary] Groq narrative failed: %s", e)
         return None
 
 
@@ -425,15 +418,14 @@ async def generate_hiring_summary(
         semantic_score=semantic_score,
     )
 
-    # Try to enhance narrative with Cohere
-    enhanced = await _cohere_summary(
+    # Try to enhance narrative with Groq/LLaMA-3.3
+    enhanced = await _groq_narrative(
         name=name,
         job_title=job_title,
         final_score=final_score,
         matched_skills=matched_skills,
         missing_skills=missing_skills,
         experience_years=experience_years,
-        resume_quality=res_quality,
         recommendation=recommendation,
     )
     if enhanced:

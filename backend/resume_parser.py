@@ -851,13 +851,11 @@ def extract_experience_years(text: str) -> float:
         return stage2_years
 
     # ──────────────────────────────────────────────────────────────────
-    # STAGE 3: AI/NLP Fallback via Cohere
+    # STAGE 3: AI/NLP Fallback via Groq
     # ──────────────────────────────────────────────────────────────────
-    api_key = os.getenv("COHERE_API_KEY", "")
-    if api_key and api_key not in ("your_cohere_key", ""):
-        try:
-            import cohere
-            client = cohere.Client(api_key, timeout=10)
+    try:
+        from services.llm_service import is_groq_available, llm_generate
+        if is_groq_available():
             prompt = (
                 "You are a resume parser. Read the following resume text carefully.\n"
                 "Your ONLY task: extract the TOTAL years of professional work experience.\n"
@@ -868,13 +866,13 @@ def extract_experience_years(text: str) -> float:
                 "- Do NOT output any explanation or text, ONLY the number.\n\n"
                 f"RESUME:\n{text[:3000]}"
             )
-            resp = client.chat(model="command-r-plus-08-2024", message=prompt, temperature=0.0)
-            m = re.search(r'(\d+(?:\.\d+)?)', resp.text.strip())
+            resp = llm_generate(prompt, temperature=0.0, max_tokens=10)
+            m = re.search(r'(\d+(?:\.\d+)?)', resp.strip())
             if m:
                 val = float(m.group(1))
                 return min(val, 40.0)
-        except Exception as e:
-            print(f"[ExperienceParser] Cohere fallback failed: {e}")
+    except Exception as e:
+        print(f"[ExperienceParser] Groq fallback failed: {e}")
 
     return 0.0
 
