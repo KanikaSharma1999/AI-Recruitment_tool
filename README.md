@@ -121,7 +121,7 @@ Double-click `start_platform.bat` or run:
 # Start FastAPI backend
 cd backend
 pip install -r requirements.txt
-python main.py
+uvicorn main:app --reload
 
 # Start React frontend
 cd ../frontend
