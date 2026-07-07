@@ -6,41 +6,68 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('ats_user');
-    const parsed = saved ? JSON.parse(saved) : null;
-    if (parsed && (!parsed.email || parsed.email.toLowerCase() !== 'sandhyagowda506@gmail.com')) {
-      localStorage.removeItem('ats_token');
-      localStorage.removeItem('ats_user');
-      return null;
-    }
-    return parsed;
+    return saved ? JSON.parse(saved) : null;
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user && (!user.email || user.email.toLowerCase() !== 'sandhyagowda506@gmail.com')) {
-      logout();
-    }
-  }, [user]);
+    const verifyToken = async () => {
+      const token = localStorage.getItem('ats_token');
+      if (!token) {
+        setLoading(false);
+        setUser(null);
+        return;
+      }
+      try {
+        const { data } = await API.get('/auth/me');
+        const userObj = { email: data.email, name: data.name, role: data.role, company_name: data.company_name };
+        localStorage.setItem('ats_user', JSON.stringify(userObj));
+        setUser(userObj);
+      } catch (err) {
+        console.error('Session verification failed, logging out:', err);
+        logout();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    verifyToken();
+  }, []);
 
   const login = async (email, password) => {
-    if (email.toLowerCase() !== 'sandhyagowda506@gmail.com') {
-      throw new Error('Access restricted to authorized recruiter.');
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('username', email);
+      params.append('password', password);
+      
+      const { data } = await API.post('/auth/login', params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      
+      localStorage.setItem('ats_token', data.access_token);
+      const userObj = { email: data.email, name: data.name, role: data.role, company_name: data.company_name };
+      localStorage.setItem('ats_user', JSON.stringify(userObj));
+      setUser(userObj);
+      return data;
+    } finally {
+      setLoading(false);
     }
-    const params = new URLSearchParams();
-    params.append('username', email);
-    params.append('password', password);
-    const { data } = await API.post('/auth/login', params, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
-    localStorage.setItem('ats_token', data.access_token);
-    const userObj = { email: data.email, name: data.name, role: data.role };
-    localStorage.setItem('ats_user', JSON.stringify(userObj));
-    setUser(userObj);
-    return data;
   };
 
   const signup = async (userData) => {
-    throw new Error('Public registration is disabled.');
+    setLoading(true);
+    try {
+      const { data } = await API.post('/auth/register', {
+        name: userData.name,
+        email: userData.email,
+        password: userData.password,
+        company_name: userData.company_name || ""
+      });
+      return data;
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updateProfile = async (updateData) => {

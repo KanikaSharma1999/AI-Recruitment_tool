@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import API from '../api/client';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 import { MdEmail, MdLock, MdLogin, MdVisibility, MdVisibilityOff, MdShield } from 'react-icons/md';
 
 export default function Login() {
   const [email, setEmail] = useState(() => {
-    return localStorage.getItem('ats_remembered_email') || '';
+    const saved = localStorage.getItem('ats_remembered_email') || '';
+    return saved === 'sandhyagowda506@gmail.com' ? '' : saved;
   });
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -23,10 +24,8 @@ export default function Login() {
 
   useEffect(() => {
     API.get('/health').then(res => {
-      // /health now returns 'ok' when connected, 'degraded' or network error when not
       const overallStatus = res.data?.status;
       const dbStatus = res.data?.database?.status;
-      // Treat as offline only when backend is explicitly degraded OR db is not connected
       setIsDbOffline(overallStatus !== 'ok' || dbStatus === 'offline');
       setBackendOffline(false);
     }).catch(() => {
@@ -37,10 +36,6 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (email.trim().toLowerCase() !== 'sandhyagowda506@gmail.com') {
-      toast.error('Access restricted to authorized recruiter.');
-      return;
-    }
     setLoading(true);
     try {
       await login(email.trim(), password);
@@ -51,18 +46,19 @@ export default function Login() {
         localStorage.removeItem('ats_remembered_email');
         localStorage.setItem('ats_remember_me', 'false');
       }
-      toast.success('Welcome back, Recruiter!');
+      toast.success('Welcome back!');
       navigate('/dashboard');
     } catch (err) {
       const msg = err.response?.data?.detail || err.message || 'Invalid credentials';
-      if (msg.includes('restricted') || msg.includes('Unauthorized recruiter')) {
-        toast.error('Access restricted to authorized recruiter.');
-      } else {
-        toast.error(msg);
-      }
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleForgotPassword = (e) => {
+    e.preventDefault();
+    toast.error('Self-service password recovery is disabled. Please contact your system administrator.');
   };
 
   return (
@@ -85,16 +81,11 @@ export default function Login() {
             <MdShield size={28} />
           </div>
           <h1 style={{ fontSize: 26, fontWeight: 600, color: '#fff', margin: 0, letterSpacing: '-0.5px' }}>
-            Hire<span style={{ color: '#818cf8' }}>IQ</span> <span style={{ fontWeight: 400, fontSize: 18, color: '#94a3b8' }}>Recruiter OS</span>
+            Hire<span style={{ color: '#818cf8' }}>IQ</span> <span style={{ fontWeight: 400, fontSize: 18, color: '#94a3b8' }}>SaaS Portal</span>
           </h1>
           <p style={{ color: '#94a3b8', fontSize: 13, marginTop: 6, marginBottom: 0 }}>
-            Private Enterprise Recruitment Intelligence
+            Enterprise AI Recruitment Intelligence Platform
           </p>
-        </div>
-
-        <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 24, fontSize: 12, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444' }} />
-          Private Recruiting Node: sandhyagowda506@gmail.com
         </div>
 
         <form onSubmit={handleSubmit} style={{ display:'flex', flexDirection:'column', gap:20 }}>
@@ -107,7 +98,7 @@ export default function Login() {
             <input
               type="email" className="form-input"
               style={{ background: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: 8, padding: '10px 14px', width: '100%' }}
-              placeholder="sandhyagowda506@gmail.com"
+              placeholder="recruiter@company.com"
               value={email} onChange={e => setEmail(e.target.value)}
               required autoFocus
             />
@@ -147,14 +138,28 @@ export default function Login() {
               />
               Remember Me
             </label>
+            <a
+              href="#"
+              onClick={handleForgotPassword}
+              style={{ fontSize: 13, color: '#818cf8', textDecoration: 'none', fontWeight: 500 }}
+            >
+              Forgot Password?
+            </a>
           </div>
 
           <button type="submit" className="btn btn-primary"
             disabled={loading || isDbOffline || backendOffline}
             style={{ padding:'12px', fontSize:15, marginTop:8, justifyContent:'center', background: '#6366f1', border: 'none', color: '#fff', borderRadius: 8, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-            {loading ? <span className="spinner" /> : (backendOffline ? 'Backend Offline' : (isDbOffline ? 'Database Offline' : <><MdLogin /> Authenticate Recruiter</>))}
+            {loading ? <span className="spinner" /> : (backendOffline ? 'Backend Offline' : (isDbOffline ? 'Database Offline' : <><MdLogin /> Sign In</>))}
           </button>
         </form>
+
+        <div style={{ textAlign: 'center', marginTop: 24, fontSize: 14, color: '#94a3b8' }}>
+          Don't have an account?{' '}
+          <Link to="/register" style={{ color: '#818cf8', textDecoration: 'none', fontWeight: 600 }}>
+            Create Account
+          </Link>
+        </div>
       </div>
     </div>
   );

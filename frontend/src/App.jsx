@@ -15,6 +15,8 @@ import SystemStatusBanner from './components/SystemStatusBanner';
 import Compare from './pages/Compare';
 import InterviewRoom from './pages/InterviewRoom';
 import CandidateInterview from './pages/CandidateInterview';
+import Register from './pages/Register';
+import Workspace from './pages/Workspace';
 import { useAuth } from './context/AuthContext';
 
 function AppContent() {
@@ -28,7 +30,8 @@ function AppContent() {
         }} />
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Navigate to="/login" replace />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/signup" element={<Navigate to="/register" replace />} />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/upload"     element={<ProtectedRoute><Upload /></ProtectedRoute>} />
@@ -40,6 +43,7 @@ function AppContent() {
           <Route path="/settings"   element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/account"    element={<ProtectedRoute><Account /></ProtectedRoute>} />
           <Route path="/compare"    element={<ProtectedRoute><Compare /></ProtectedRoute>} />
+          <Route path="/workspace"  element={<ProtectedRoute><Workspace /></ProtectedRoute>} />
           <Route path="*"           element={<Navigate to="/dashboard" replace />} />
         </Routes>
         {user && <ChatbotPanel />}

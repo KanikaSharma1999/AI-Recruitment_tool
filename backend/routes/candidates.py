@@ -87,7 +87,7 @@ async def search_candidates(
     
     # Fetch full candidate details from DB
     candidates_dict = {}
-    async for c in candidates_col.find({"_id": {"$in": candidate_ids}}):
+    async for c in candidates_col.find({"_id": {"$in": candidate_ids}, "created_by": current_user["email"]}):
         candidates_dict[str(c["_id"])] = serialize(c)
         
     results = []
@@ -116,7 +116,7 @@ async def list_candidates(
     search: Optional[str] = Query(None),
     current_user=Depends(get_current_user),
 ):
-    query = {}
+    query = {"created_by": current_user["email"]}
     if job_id:
         query["job_id"] = job_id
     if status_filter:
@@ -170,7 +170,7 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
     from services.llm_parser import parse_resume_with_llm, parse_jd_with_llm, generate_candidate_intelligence
 
     try:
-        c = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
+        c = await candidates_col.find_one({"_id": ObjectId(candidate_id), "created_by": current_user["email"]})
     except Exception:
         raise HTTPException(status_code=404, detail="Candidate not found")
     if not c:
@@ -184,28 +184,62 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
         if resume_path_val:
             content = None
             is_pdf = False
-            if resume_path_val.startswith("http://") or resume_path_val.startswith("https://"):
-                try:
-                    import httpx
-                    resp = httpx.get(resume_path_val)
-                    if resp.status_code == 200:
-                        content = resp.content
-                        is_pdf = resume_path_val.lower().endswith(".pdf")
-                except Exception as e:
-                    print(f"[Parser] Failed to fetch remote resume: {e}")
-            else:
-                from config import UPLOAD_DIR
-                file_path = UPLOAD_DIR / resume_path_val
-                if not file_path.exists():
-                    stripped = resume_path_val.replace("uploads/", "").replace("uploads\\", "")
-                    file_path = UPLOAD_DIR / stripped
-                if not file_path.exists():
-                    filename = os.path.basename(resume_path_val)
-                    search_results = list(UPLOAD_DIR.glob(f"**/{filename}"))
-                    if search_results:
-                        file_path = search_results[0]
+            
+            # Extract filename
+            filename_val = c.get("filename") or os.path.basename(resume_path_val)
+            relative_path = resume_path_val
+            
+            is_url = resume_path_val.startswith("http://") or resume_path_val.startswith("https://")
+            if is_url:
+                if "/uploads/" in resume_path_val:
+                    # Local URL format, extract relative path after '/uploads/'
+                    relative_path = resume_path_val.split("/uploads/")[-1]
+                    is_url = False # Process as local file
+                else:
+                    # True cloud URL (S3, Supabase), fetch via HTTP
+                    try:
+                        import httpx
+                        resp = httpx.get(resume_path_val)
+                        if resp.status_code == 200:
+                            content = resp.content
+                            is_pdf = resume_path_val.lower().endswith(".pdf")
+                    except Exception as e:
+                        print(f"[Parser] Failed to fetch remote resume: {e}")
+
+            if not is_url:
+                # Clean up relative path separators
+                relative_path = relative_path.replace("uploads/", "").replace("uploads\\", "")
                 
-                if file_path.exists():
+                from pathlib import Path
+                from config import UPLOAD_DIR, PROJECT_ROOT, BACKEND_DIR
+                search_dirs = [
+                    UPLOAD_DIR,
+                    BACKEND_DIR / "uploads",
+                    Path("uploads")
+                ]
+                
+                file_path = None
+                for s_dir in search_dirs:
+                    p1 = s_dir / relative_path
+                    if p1.exists() and p1.is_file():
+                        file_path = p1
+                        break
+                        
+                    p2 = s_dir / "resumes" / relative_path
+                    if p2.exists() and p2.is_file():
+                        file_path = p2
+                        break
+                        
+                    results = list(s_dir.glob(f"**/{filename_val}"))
+                    if not results:
+                        basename = os.path.basename(relative_path)
+                        results = list(s_dir.glob(f"**/{basename}"))
+                        
+                    if results:
+                        file_path = results[0]
+                        break
+                
+                if file_path and file_path.exists():
                     try:
                         with open(file_path, "rb") as f:
                             content = f.read()
@@ -268,7 +302,11 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
     req_skills = jd_profile.get("required_skills", [])
     minimum_exp = float(jd_profile.get("minimum_experience", 0.0) or 0.0)
 
-    # ── Skills score (40%) ──
+    # ── Load recruiter weights ───────────────────────────────────────────────
+    from routes.settings import get_recruiter_weights
+    weights = await get_recruiter_weights(current_user)
+
+    # ── Skills score ──
     cand_skills_list = []
     if profile.get("technical_skills"):
         cand_skills_list.extend(profile.get("technical_skills", []))
@@ -283,9 +321,9 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
     )
     pref_skills = jd_profile.get("preferred_skills", [])
     bonus = [s for s in pref_skills if any(cs.lower() == s.lower() for cs in cand_skills_list)]
-    skills_weight = skill_score * 0.40
+    skills_weight = skill_score * weights.get("skills", 0.40)
 
-    # ── Experience score (25%) ──
+    # ── Experience score ──
     exp_breakdown = calculate_experience_breakdown(
         timeline=profile.get("employment_timeline", []),
         explicit_exp=float(profile.get("total_experience_years") or 0.0),
@@ -303,13 +341,13 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
         else:
             ratio = effective_exp / minimum_exp
             exp_score = round(ratio * 100.0, 2)
-    exp_weight = exp_score * 0.25
+    exp_weight = exp_score * weights.get("experience", 0.25)
 
-    # ── Semantic score (15%) ──
+    # ── Semantic score ──
     sem_score = compute_semantic_similarity(jd_text, raw_text)
-    sem_weight = sem_score * 0.15
+    sem_weight = sem_score * weights.get("semantic", 0.15)
 
-    # ── Projects score (10%) ──
+    # ── Projects score ──
     proj_reqs = jd_profile.get("project_requirements", [])
     cand_projs = profile.get("projects", [])
     if not proj_reqs:
@@ -318,9 +356,9 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
     else:
         matched_p = [p for p in cand_projs if any(r.lower() in p.lower() for r in proj_reqs)]
         project_score = round((len(matched_p) / max(len(proj_reqs), 1)) * 100, 2)
-    proj_weight = project_score * 0.10
+    proj_weight = project_score * weights.get("projects", 0.10)
 
-    # ── Certifications score (5%) ──
+    # ── Certifications score ──
     cert_reqs = jd_profile.get("certifications_required", [])
     cand_certs = profile.get("certifications", [])
     if not cert_reqs:
@@ -328,11 +366,11 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
     else:
         matched_c = [c for c in cand_certs if any(r.lower() in c.lower() for r in cert_reqs)]
         cert_score = round((len(matched_c) / max(len(cert_reqs), 1)) * 100, 2)
-    cert_weight = cert_score * 0.05
+    cert_weight = cert_score * weights.get("certifications", 0.05)
 
-    # ── Quality score (5%) ──
+    # ── Quality score ──
     quality_score, quality_penalties = compute_quality_score(profile, raw_text)
-    quality_weight = quality_score * 0.05
+    quality_weight = quality_score * weights.get("quality", 0.05)
 
     # ── Weighted sum ──
     raw_final = (
@@ -343,6 +381,7 @@ async def rerank_candidate(candidate_id: str, current_user=Depends(get_current_u
         + cert_weight
         + quality_weight
     )
+
 
     # ── Apply global hard penalties ──
     global_penalties = []
@@ -486,7 +525,7 @@ async def compare_candidates(
     result = []
     for cid in id_list:
         try:
-            c = await candidates_col.find_one({"_id": ObjectId(cid)})
+            c = await candidates_col.find_one({"_id": ObjectId(cid), "created_by": current_user["email"]})
         except Exception:
             continue
         if not c:
@@ -531,7 +570,7 @@ async def compare_insights(
     candidates = []
     for cid in id_list:
         try:
-            c = await candidates_col.find_one({"_id": ObjectId(cid)})
+            c = await candidates_col.find_one({"_id": ObjectId(cid), "created_by": current_user["email"]})
             if c: candidates.append(c)
         except Exception:
             continue
@@ -598,7 +637,7 @@ async def compare_insights(
 
 @router.get("/{candidate_id}")
 async def get_candidate(candidate_id: str, current_user=Depends(get_current_user)):
-    c = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
+    c = await candidates_col.find_one({"_id": ObjectId(candidate_id), "created_by": current_user["email"]})
     if not c:
         raise HTTPException(status_code=404, detail="Candidate not found")
     result = serialize(c)
@@ -658,7 +697,7 @@ async def update_status(
     if not stage:
         raise HTTPException(status_code=400, detail=f"Status must be one of: {valid}")
 
-    candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
+    candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id), "created_by": current_user["email"]})
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
         
@@ -669,7 +708,7 @@ async def update_status(
     }
     
     result = await candidates_col.update_one(
-        {"_id": ObjectId(candidate_id)},
+        {"_id": ObjectId(candidate_id), "created_by": current_user["email"]},
         {"$set": {"pipeline_stage": stage, "status": stage, "updated_at": datetime.utcnow()},
          "$push": {"activity_history": activity}},
     )
@@ -720,7 +759,7 @@ async def bulk_update_status(
     }
 
     result = await candidates_col.update_many(
-        {"_id": {"$in": object_ids}},
+        {"_id": {"$in": object_ids}, "created_by": current_user["email"]},
         {"$set": {"pipeline_stage": stage, "status": stage, "updated_at": datetime.utcnow()},
          "$push": {"activity_history": activity}},
     )
@@ -740,7 +779,7 @@ async def add_note(
         "created_at": datetime.utcnow().isoformat(),
     }
     result = await candidates_col.update_one(
-        {"_id": ObjectId(candidate_id)},
+        {"_id": ObjectId(candidate_id), "created_by": current_user["email"]},
         {"$push": {"notes": note_doc}},
     )
     if result.matched_count == 0:
@@ -750,7 +789,7 @@ async def add_note(
 @router.delete("/{candidate_id}")
 async def delete_candidate(candidate_id: str, current_user=Depends(get_current_user)):
     try:
-        candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
+        candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id), "created_by": current_user["email"]})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid candidate ID format")
         
@@ -816,34 +855,61 @@ async def get_candidate_resume(candidate_id: str):
     if not resume_path_val:
         raise HTTPException(status_code=404, detail="Resume reference missing in database")
 
-    if resume_path_val.startswith("http://") or resume_path_val.startswith("https://"):
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=resume_path_val)
+    # Resolve the file path: support local URLs, relative paths, and cloud URLs
+    filename = candidate.get("filename") or os.path.basename(resume_path_val)
+    relative_path = resume_path_val
 
-    file_path = UPLOAD_DIR / resume_path_val
-    
-    if not file_path.exists():
-        stripped = resume_path_val.replace("uploads/", "").replace("uploads\\", "")
-        file_path = UPLOAD_DIR / stripped
-
-    if not file_path.exists():
-        logger.error(f"Resume file NOT FOUND. ID: {candidate_id}, Stored Path: {resume_path_val}, Resolved: {file_path}")
-        filename = os.path.basename(resume_path_val)
-        search_results = list(UPLOAD_DIR.glob(f"**/{filename}"))
-        if search_results:
-            file_path = search_results[0]
-            logger.info(f"Fuzzy match found: {file_path}")
+    is_url = resume_path_val.startswith("http://") or resume_path_val.startswith("https://")
+    if is_url:
+        if "/uploads/" in resume_path_val:
+            # Local URL format, extract relative path after '/uploads/'
+            relative_path = resume_path_val.split("/uploads/")[-1]
         else:
-            # Fallback: serve candidate's raw_text as a plain text response
-            raw_text = candidate.get("raw_text", "")
-            if raw_text:
-                from fastapi.responses import Response
-                return Response(
-                    content=raw_text,
-                    media_type="text/plain",
-                    headers={"Content-Disposition": f"inline; filename={candidate.get('filename', 'resume.txt')}"}
-                )
-            raise HTTPException(status_code=404, detail=f"Resume file not found at {file_path.name}")
+            # True cloud URL (S3, Supabase), redirect directly
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url=resume_path_val)
+
+    # Clean up relative path separators
+    relative_path = relative_path.replace("uploads/", "").replace("uploads\\", "")
+    
+    from pathlib import Path
+    from config import PROJECT_ROOT, BACKEND_DIR
+    search_dirs = [
+        UPLOAD_DIR,
+        BACKEND_DIR / "uploads",
+        Path("uploads")
+    ]
+    
+    file_path = None
+    for s_dir in search_dirs:
+        # Check direct path
+        p1 = s_dir / relative_path
+        if p1.exists() and p1.is_file():
+            file_path = p1
+            break
+            
+        # Check direct subfolder path (like s_dir / "resumes" / relative_path)
+        p2 = s_dir / "resumes" / relative_path
+        if p2.exists() and p2.is_file():
+            file_path = p2
+            break
+            
+        # Check fuzzy filename match within s_dir
+        results = list(s_dir.glob(f"**/{filename}"))
+        if not results:
+            basename = os.path.basename(relative_path)
+            results = list(s_dir.glob(f"**/{basename}"))
+            
+        if results:
+            file_path = results[0]
+            break
+
+    if not file_path or not file_path.exists():
+        logger.error(f"Resume file NOT FOUND. ID: {candidate_id}, Stored Path: {resume_path_val}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Original resume PDF file not found on storage. (Path: {resume_path_val})"
+        )
 
     ext = file_path.suffix.lower()
     mime_types = {

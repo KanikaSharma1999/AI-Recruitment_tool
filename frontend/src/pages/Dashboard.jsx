@@ -67,12 +67,7 @@ export default function Dashboard() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifs, setNotifs] = useState([]);
 
-  // Interactive pending actions list
-  const [pendingApprovals, setPendingApprovals] = useState([
-    { id: 1, title: 'Verify Skiran\'s Proctoring Log', subtitle: 'Potential tab-switch alert', priority: 'High', priorityColor: '#ef4444', priorityBg: '#fee2e2', requester: 'AI Proctor', time: '2 hours ago' },
-    { id: 2, title: 'Complete Behavioral Analysis', subtitle: 'Emma Davis — Interview finished', priority: 'Medium', priorityColor: '#f59e0b', priorityBg: '#fef3c7', requester: 'Skype Bot', time: '4 hours ago' },
-    { id: 3, title: 'Review Archana\'s Skill Gaps', subtitle: 'React/Python developer matching', priority: 'Low', priorityColor: '#10b981', priorityBg: '#d1fae5', requester: 'HireIQ Copilot', time: '1 day ago' },
-  ]);
+
 
   useEffect(() => {
     API.get('/jobs/list').then(r => setJobs(r.data || [])).catch(() => {});
@@ -132,14 +127,7 @@ export default function Dashboard() {
     return days;
   };
 
-  const handleResolveApproval = (id, approved, title) => {
-    setPendingApprovals(prev => prev.filter(item => item.id !== id));
-    if (approved) {
-      toast.success(`Action Approved: ${title}`);
-    } else {
-      toast.error(`Action Dismissed: ${title}`);
-    }
-  };
+
 
   const getDaysOpen = (job) => {
     if (!job.posted_at && !job.created_at) return '12d';
@@ -282,13 +270,18 @@ export default function Dashboard() {
             </div>
 
             {/* Profile Avatar Card */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              borderLeft: '1px solid #e2e8f0',
-              paddingLeft: 20,
-            }}>
+            <div 
+              onClick={() => navigate('/settings')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                borderLeft: '1px solid #e2e8f0',
+                paddingLeft: 20,
+                cursor: 'pointer'
+              }}
+              title="Go to Settings"
+            >
               <div style={{
                 width: 36,
                 height: 36,
@@ -305,7 +298,7 @@ export default function Dashboard() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>{user?.name || 'Admin'}</span>
-                <span style={{ fontSize: 10.5, color: '#64748b' }}>Senior Recruiter</span>
+                <span style={{ fontSize: 10.5, color: '#64748b' }}>{user?.role || 'Senior Recruiter'}</span>
               </div>
             </div>
           </div>
@@ -586,53 +579,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Pending actions (approvals) */}
-            <div className="card" style={{ padding: 24, borderRadius: 16, border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: 13, fontWeight: 800, color: '#64748b', marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MdCheckCircle style={{ color: '#10b981' }} /> Pending Actions
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {pendingApprovals.length > 0 ? pendingApprovals.map(item => (
-                  <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f8fafc', paddingBottom: 12 }}>
-                    <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }}>{item.title}</span>
-                        <span style={{ fontSize: 9, fontWeight: 800, color: item.priorityColor, background: item.priorityBg, padding: '1px 6px', borderRadius: 4 }}>
-                          {item.priority}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 4 }}>
-                        {item.subtitle} • {item.time}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button
-                        onClick={() => handleResolveApproval(item.id, true, item.title)}
-                        style={{
-                          width: 26, height: 26, borderRadius: 6, border: 'none', background: '#d1fae5', color: '#059669',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 700
-                        }}
-                      >
-                        
-                      </button>
-                      <button
-                        onClick={() => handleResolveApproval(item.id, false, item.title)}
-                        style={{
-                          width: 26, height: 26, borderRadius: 6, border: 'none', background: '#fee2e2', color: '#dc2626',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12, fontWeight: 700
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                )) : (
-                  <div style={{ padding: '10px 0', textAlign: 'center', color: '#94a3b8', fontSize: 12 }}>
-                    🎉 All clear! No pending actions.
-                  </div>
-                )}
-              </div>
-            </div>
+
 
           </div>
 

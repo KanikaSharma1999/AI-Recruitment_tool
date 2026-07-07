@@ -1,11 +1,14 @@
 """
 Advanced Resume Parser
 =======================
-- Extended SKILLS_DB with 200+ skills
-- SKILL_SYNONYMS dictionary for normalization (ReactJS→react, ML→machine learning, etc.)
-- 3-stage skill extraction: keyword → fuzzy → semantic
-- extract_certifications(), extract_projects()
-- All functions are pure / no side-effects; safe to import anywhere
+Hybrid parsing pipeline:
+  Stage 1: PDF extraction via PyMuPDF (services/pdf_extractor.py)
+  Stage 2: NER via GLiNER + regex fallback (services/ner_engine.py)
+  Stage 3: Skill normalization (services/skill_normalizer.py)
+  Stage 4: Experience extraction (Groq + rule-based)
+  Stage 5: Education extraction (rule-based + Groq validation)
+
+All functions are pure / no side-effects; safe to import anywhere.
 """
 
 import re
@@ -17,14 +20,31 @@ from typing import Optional, List
 
 logger = logging.getLogger(__name__)
 
-# ── PDF/DOCX reading ──────────────────────────────────────────────────────────
+# ── PDF/DOCX reading — now delegates to services/pdf_extractor.py ─────────────
 try:
-    from PyPDF2 import PdfReader
+    from services.pdf_extractor import extract_text_from_bytes as _extract_text_from_bytes
+    from services.pdf_extractor import read_pdf_bytes as _fitz_read_pdf
     _PDF_OK = True
 except ImportError:
-    _PDF_OK = False
+    # Fallback: PyPDF2
+    try:
+        from PyPDF2 import PdfReader
+        def _fitz_read_pdf(content: bytes) -> str:
+            import io as _io
+            try:
+                reader = PdfReader(_io.BytesIO(content))
+                return "\n".join(p.extract_text() or "" for p in reader.pages)
+            except Exception:
+                return ""
+        def _extract_text_from_bytes(content: bytes, filename: str) -> str:
+            return _fitz_read_pdf(content)
+        _PDF_OK = True
+    except ImportError:
+        _PDF_OK = False
+        def _fitz_read_pdf(content: bytes) -> str: return ""
+        def _extract_text_from_bytes(content: bytes, filename: str) -> str: return ""
 
-# ── spaCy (Lazy Loaded) ───────────────────────────────────────────────────────
+# ── spaCy (Lazy Loaded — used as NER fallback only) ──────────────────────────
 _nlp = None
 def get_nlp():
     global _nlp
@@ -318,18 +338,10 @@ CERTIFICATION_KEYWORDS = [
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def read_pdf_bytes(content: bytes) -> str:
+    """Read PDF bytes using PyMuPDF (preferred) or PyPDF2 fallback."""
     if not _PDF_OK:
         return ""
-    try:
-        reader = PdfReader(io.BytesIO(content))
-        text = ""
-        for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-        return text
-    except Exception:
-        return ""
+    return _fitz_read_pdf(content)
 
 
 def read_txt_bytes(content: bytes) -> str:
@@ -636,44 +648,48 @@ def _normalize_skill_token(token: str) -> Optional[str]:
 
 def extract_skills(text: str) -> List[str]:
     """
-    3-stage skill extraction:
-    Stage 1: Direct keyword match (exact, multi-word)
-    Stage 2: Synonym normalisation
-    Stage 3: Fuzzy matching with rapidfuzz (catches typos/abbreviations)
+    Skill extraction delegated to the Master Skill Normalization Engine
+    (services/skill_normalizer.py).
+
+    Falls back to in-module logic if the service is unavailable.
     Returns sorted deduplicated list of canonical skill names.
     """
+    # Prefer the dedicated normalization engine
+    try:
+        from services.skill_normalizer import extract_and_normalize_skills
+        return extract_and_normalize_skills(text)
+    except ImportError:
+        pass
+
+    # ── In-module fallback (legacy 3-stage logic) ─────────────────────────────
     text_lower = text.lower()
     found: set[str] = set()
 
-    # Stage 1 — exact keyword match (existing approach, all SKILLS_DB)
+    # Stage 1 — exact keyword match
     for skill in SKILLS_DB:
         pattern = r'\b' + re.escape(skill) + r'\b'
         if re.search(pattern, text_lower):
             found.add(skill)
 
     # Stage 2 — synonym normalisation
-    # Tokenise text into 1-word and 2-word n-grams and check synonyms
     words = re.findall(r"[a-z][a-z0-9.#+\-/]*", text_lower)
     for i, w in enumerate(words):
         canon = _normalize_skill_token(w)
         if canon:
             found.add(canon)
-        # Bi-gram
         if i + 1 < len(words):
             bigram = w + " " + words[i + 1]
             canon = _normalize_skill_token(bigram)
             if canon:
                 found.add(canon)
-        # Tri-gram
         if i + 2 < len(words):
             trigram = w + " " + words[i + 1] + " " + words[i + 2]
             canon = _normalize_skill_token(trigram)
             if canon:
                 found.add(canon)
 
-    # Stage 3 — fuzzy matching for short tokens (handles abbreviations like MLOps→ML)
+    # Stage 3 — fuzzy matching
     if _FUZZY_OK:
-        # Only run fuzzy on 1-3 word tokens extracted from "skills section"
         skills_section = _extract_skills_section(text)
         if skills_section:
             tokens = re.split(r'[,;|\n•·▪\-]+', skills_section)
@@ -681,10 +697,8 @@ def extract_skills(text: str) -> List[str]:
                 tok = tok.strip().lower()
                 if not tok or len(tok) < 2 or len(tok) > 30:
                     continue
-                # Skip if already found
                 if _normalize_skill_token(tok):
                     continue
-                # Fuzzy match against SKILLS_DB
                 match = rfprocess.extractOne(
                     tok, list(SKILLS_DB), scorer=fuzz.ratio, score_cutoff=82
                 )

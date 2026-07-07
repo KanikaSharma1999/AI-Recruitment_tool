@@ -51,17 +51,17 @@ async def check_upcoming_interviews():
                 logs = interview.get("reminders_sent_logs", [])
                 sent_types = [l["type"] for l in logs if l.get("status") == "success"]
 
+                recruiter_email = interview.get("recruiter_email") or candidate.get("scheduled_by_email")
+                if not recruiter_email:
+                    print(f"[Scheduler] No recruiter email for {candidate.get('name')} — skipping reminder")
+                    continue
+
                 from services.email_service import get_db_email_settings, get_fallback_settings, send_email, get_reminder_template
-                settings = await get_db_email_settings() or get_fallback_settings()
+                settings = await get_db_email_settings(recruiter_email) or get_fallback_settings()
                 app_name = settings.get("app_name", "AI Hiring Platform")
 
                 # 15-minute HR reminder only
                 if 12 <= diff_minutes <= 18 and "15m" not in sent_types:
-                    recruiter_email = interview.get("recruiter_email") or candidate.get("scheduled_by_email")
-                    if not recruiter_email:
-                        print(f"[Scheduler] No recruiter email for {candidate.get('name')} — skipping reminder")
-                        continue
-                    
                     job_title = "Scheduled Role"
                     try:
                         job = await jobs_col.find_one({"_id": ObjectId(candidate["job_id"])})
@@ -77,7 +77,7 @@ async def check_upcoming_interviews():
                     subject = f"🔔 Interview in 15 mins — {candidate['name']} | {job_title}"
                     
                     print(f"[Scheduler] Sending 15min HR reminder to {recruiter_email} for candidate {candidate['name']}")
-                    success = await send_email(recruiter_email, subject, html)
+                    success = await send_email(recruiter_email, subject, html, recruiter_email=recruiter_email)
                     
                     log_entry = {"type": "15m", "sent_at": datetime.utcnow(), "status": "success" if success else "failed", "recipient": recruiter_email}
                     await candidates_col.update_one(
@@ -321,14 +321,14 @@ async def lifespan(app: FastAPI):
             traceback.print_exc()
         
         # Verify sentence-transformers model loads successfully
-        print("[Startup] Verifying SentenceTransformer model (all-MiniLM-L6-v2) load...")
+        print("[Startup] Verifying SentenceTransformer model (BAAI/bge-large-en-v1.5) load...")
         try:
             from sentence_transformers import SentenceTransformer
             # Force load the model
-            model = SentenceTransformer("all-MiniLM-L6-v2")
+            model = SentenceTransformer("BAAI/bge-large-en-v1.5")
             if model is None:
                 raise Exception("Model returned None.")
-            print("[SUCCESS] Embedding model loaded")
+            print("[SUCCESS] Embedding model loaded (dim=1024)")
         except Exception as me:
             print(f"⚠️ [Startup Warning] SentenceTransformer Model Load FAILED: {me}", file=sys.stderr)
             print("Server will continue running in degraded mode without vector embeddings.", file=sys.stderr)
@@ -381,10 +381,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ATS Platform API", version="1.0.0", lifespan=lifespan)
 
-# Mount local uploads directory
+# Mount centralized uploads directory
 from fastapi.staticfiles import StaticFiles
-os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+from config import UPLOAD_DIR
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+(UPLOAD_DIR / "recordings").mkdir(parents=True, exist_ok=True)
+(UPLOAD_DIR / "resumes").mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # ─── Health Check Endpoints ──────────────────────────────────────────────────
 
@@ -487,10 +490,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi.staticfiles import StaticFiles
-os.makedirs("uploads", exist_ok=True)
-os.makedirs("uploads/recordings", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
 
 
 # ─────────────────────────── DEBUG ────────────────────────────────────────────
@@ -509,7 +509,7 @@ async def debug_direct_email(current_user=Depends(get_current_user)):
 
     from services.email_service import send_email, get_fallback_settings
 
-    target = "sandhyagowda506@gmail.com"
+    target = current_user["email"]
     subject = "TEST EMAIL FROM HIREIQ"
     html = """
     <div style="font-family:sans-serif;padding:24px;border:2px solid #4f46e5;border-radius:12px;max-width:500px">
@@ -524,7 +524,7 @@ async def debug_direct_email(current_user=Depends(get_current_user)):
     """.format(datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"))
 
     print(f"[DEBUG ROUTE] Calling send_email() to {target}...")
-    result = await send_email(target, subject, html)
+    result = await send_email(target, subject, html, recruiter_email=target)
     print(f"[DEBUG ROUTE] send_email() returned: {result}")
 
     settings = get_fallback_settings()
@@ -605,6 +605,43 @@ from routes.settings import router as settings_router
 app.include_router(settings_router)
 from routes.auth import router as auth_router
 app.include_router(auth_router)
+from routes.workspace import router as workspace_router
+app.include_router(workspace_router)
+
+
+# ─────────────────────── STORAGE DIAGNOSTICS ─────────────────────────────────
+
+@app.get("/debug/storage-health")
+async def debug_storage_health(current_user=Depends(get_current_user)):
+    """
+    Verify Supabase Storage connectivity and configuration.
+    Returns health status, provider name, and configuration state.
+    """
+    from services.storage_abstraction import storage
+    health = await storage.health_check()
+    return {
+        "provider": storage.provider_name,
+        "configured": storage.is_configured,
+        "health": health,
+        "advice": (
+            "Set SUPABASE_URL and SUPABASE_SERVICE_KEY in your .env to enable cloud storage."
+            if not storage.is_configured else "Storage is configured and active."
+        )
+    }
+
+
+@app.get("/debug/embedding-model")
+async def debug_embedding_model(current_user=Depends(get_current_user)):
+    """
+    Show the active embedding model configuration and FAISS index status.
+    """
+    from services.vector_store import EMBEDDING_MODEL_NAME, EMBEDDING_DIM, get_store_stats
+    stats = get_store_stats()
+    return {
+        "embedding_model": EMBEDDING_MODEL_NAME,
+        "embedding_dim": EMBEDDING_DIM,
+        "faiss_stats": stats,
+    }
 
 
 def serialize(doc: dict) -> dict:
@@ -638,104 +675,130 @@ async def upload_resumes(
     files: List[UploadFile] = File(...),
     current_user=Depends(get_current_user),
 ):
-    job = await jobs_col.find_one({"_id": ObjectId(job_id)})
+    job = await jobs_col.find_one({"_id": ObjectId(job_id), "created_by": current_user["email"]})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     inserted = []
-    
-    from config import UPLOAD_DIR
     import re
+    from services.storage_abstraction import storage, BUCKET_RESUMES
 
     for file in files:
-        # Sanitize filename: replace spaces with underscores, remove special chars
+        # Sanitize filename
         clean_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', file.filename)
-        # Ensure unique filename to prevent overwrites
         unique_filename = f"{uuid.uuid4().hex[:8]}_{clean_filename}"
-        
+
         content = await file.read()
+
+        # ── Parse resume text FIRST (CPU-bound, uses raw bytes) ─────────────
         parsed = parse_resume_file(content, file.filename)
 
-        # Save to disk as temporary buffer
-        save_path = UPLOAD_DIR / unique_filename
-        with open(save_path, "wb") as f:
-            f.write(content)
+        # ── Upload to Supabase Storage (primary provider) ────────────────
+        # MongoDB stores ONLY the metadata dict, never the PDF bytes.
+        storage_metadata = None
+        storage_error = None
 
-        # Upload via storage_service (Supabase / S3 / Local fallback)
-        from services.storage_service import storage_service
-        uploaded_url = await storage_service.upload_file(str(save_path), unique_filename, folder="resumes")
-
-        # Delete local copy if uploaded to cloud (Supabase or AWS S3)
-        if (storage_service.supabase_url and storage_service.supabase_key) or (storage_service.aws_access_key and storage_service.s3_bucket):
+        if storage.is_configured:
             try:
-                import os
-                if os.path.exists(save_path):
-                    os.remove(save_path)
-                    print(f"[StorageService] Cleaned up temporary local resume: {save_path}")
-            except Exception as e:
-                print(f"[StorageService] Warning: Failed to clean up temp local resume: {e}")
+                storage_metadata = await storage.upload(
+                    content, unique_filename, BUCKET_RESUMES, "resumes"
+                )
+            except Exception as se:
+                storage_error = str(se)
+                print(f"[StorageService] Supabase upload failed for {file.filename}: {se}")
+        else:
+            storage_error = "Supabase Storage not configured (SUPABASE_URL/SUPABASE_SERVICE_KEY missing)"
+            print(f"[StorageService] WARNING: {storage_error}")
+
+        # If Supabase upload failed, still proceed with local temp path for continuity
+        # but mark clearly in metadata so recruiter knows file may not be retrievable.
+        if storage_metadata is None:
+            from config import UPLOAD_DIR
+            local_path = UPLOAD_DIR / "resumes" / unique_filename
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(local_path, "wb") as lf:
+                lf.write(content)
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+            storage_metadata = {
+                "storage_provider": "local",
+                "bucket": "local",
+                "file_name": unique_filename,
+                "file_path": f"resumes/{unique_filename}",
+                "public_url": f"{backend_url}/uploads/resumes/{unique_filename}",
+                "uploaded_at": datetime.utcnow().isoformat(),
+                "file_size": len(content),
+                "storage_error": storage_error,
+            }
 
         doc = {
-            "job_id": job_id,
-            "filename": file.filename,
-            "resume_path": uploaded_url, # Store URL or local path
-            "name": parsed["name"],
-            "email": parsed["email"],
-            "phone": parsed["phone"],
-            "skills": parsed["skills"],
+            "job_id":           job_id,
+            "created_by":       current_user["email"],
+            "filename":         file.filename,
+            # ── Storage metadata (MongoDB stores reference, NOT the file) ───
+            "storage_metadata": storage_metadata,
+            "resume_path":      storage_metadata["public_url"],
+            "file_path":        storage_metadata["file_path"],
+            "storage_provider": storage_metadata["storage_provider"],
+            # ── Parsed candidate fields ───────────────────────────────────
+            "name":             parsed["name"],
+            "email":            parsed["email"],
+            "phone":            parsed["phone"],
+            "skills":           parsed["skills"],
             "experience_years": parsed["experience_years"],
-            "education": parsed["education"],
-            "location": parsed["location"],
-            "certifications": parsed.get("certifications", []),
-            "projects": parsed.get("projects", []),
-            "raw_text": parsed["raw_text"],
-            "status": "pending",
-            "score": 0.0,
-            "semantic_score": 0.0,
-            "skill_score": 0.0,
+            "education":        parsed["education"],
+            "location":         parsed["location"],
+            "certifications":   parsed.get("certifications", []),
+            "projects":         parsed.get("projects", []),
+            "raw_text":         parsed["raw_text"],
+            # ── Initial score placeholders ────────────────────────────────
+            "status":           "pending",
+            "pipeline_stage":   "applied",
+            "score":            0.0,
+            "semantic_score":   0.0,
+            "skill_score":      0.0,
             "experience_score": 0.0,
-            "matched_skills": [],
-            "missing_skills": [],
-            "exact_matches": [],
+            "matched_skills":   [],
+            "missing_skills":   [],
+            "exact_matches":    [],
             "semantic_matches": [],
-            "partial_matches": [],
-            "bonus_skills": [],
-            "match_explanation": {},
-            "feedback": {}, # Initialized as object
-            "notes": [],
-            "interview": None,
-            "uploaded_at": datetime.utcnow(),
-            
-            # Upgraded Matching Engine fields
-            "confidence_score":      parsed.get("confidence_score", 75.0),
-            "ambiguity_detection":   parsed.get("ambiguity_detection", []),
-            "extraction_reliability":parsed.get("extraction_reliability", "Medium"),
-            "leadership_match":      "Yes" if parsed.get("leadership_experience") else "No",
-            "communication_match":   "Verified" if parsed.get("communication_indicators") else "Baseline",
-            "recruiter_explanation": "",
-            "ranking_error":         None,
-            "score_breakdown":       {},
-
-            # Structured profile details (for candidate details page)
+            "partial_matches":  [],
+            "bonus_skills":     [],
+            "match_explanation":{},
+            "feedback":         {},
+            "notes":            [],
+            "interview":        None,
+            "uploaded_at":      datetime.utcnow(),
+            # ── Parsing quality metadata ────────────────────────────────
+            "confidence_score":       parsed.get("confidence_score", 75.0),
+            "ambiguity_detection":    parsed.get("ambiguity_detection", []),
+            "extraction_reliability": parsed.get("extraction_reliability", "Medium"),
+            "leadership_match":       "Yes" if parsed.get("leadership_experience") else "No",
+            "communication_match":    "Verified" if parsed.get("communication_indicators") else "Baseline",
+            "recruiter_explanation":  "",
+            "ranking_error":          None,
+            "score_breakdown":        {},
+            # ── Structured profile fields ───────────────────────────────
             "candidate_name":         parsed.get("candidate_name") or parsed["name"],
-            "current_title":         parsed.get("current_title", ""),
-            "education_structured":  parsed.get("education", []),
-            "projects_structured":   parsed.get("projects", []),
-            "summary_or_objective":  parsed.get("summary_or_objective", ""),
-            "languages_spoken":      parsed.get("languages_spoken", []),
-            "awards_achievements":   parsed.get("awards_achievements", []),
-            "github_url":            parsed.get("github_url", ""),
-            "linkedin_url":          parsed.get("linkedin_url", ""),
-            "portfolio_url":         parsed.get("portfolio_url", ""),
-            "employment_timeline":   parsed.get("employment_timeline", []),
-            "companies":             parsed.get("companies", []),
-            "job_titles":            parsed.get("job_titles", []),
-            "technical_skills":      parsed.get("technical_skills") or parsed["skills"],
-            "soft_skills":           parsed.get("soft_skills", []),
+            "current_title":          parsed.get("current_title", ""),
+            "education_structured":   parsed.get("education", []),
+            "projects_structured":    parsed.get("projects", []),
+            "summary_or_objective":   parsed.get("summary_or_objective", ""),
+            "languages_spoken":       parsed.get("languages_spoken", []),
+            "awards_achievements":    parsed.get("awards_achievements", []),
+            "github_url":             parsed.get("github_url", ""),
+            "linkedin_url":           parsed.get("linkedin_url", ""),
+            "portfolio_url":          parsed.get("portfolio_url", ""),
+            "employment_timeline":    parsed.get("employment_timeline", []),
+            "companies":              parsed.get("companies", []),
+            "job_titles":             parsed.get("job_titles", []),
+            "technical_skills":       parsed.get("technical_skills") or parsed["skills"],
+            "soft_skills":            parsed.get("soft_skills", []),
         }
+
         result = await candidates_col.insert_one(doc)
         cid = str(result.inserted_id)
         inserted.append(cid)
+
         # Auto-index in FAISS
         try:
             from services.vector_store import index_resume
@@ -756,12 +819,12 @@ async def rank_resumes(
     job_id: str = Form(...),
     current_user=Depends(get_current_user),
 ):
-    job = await jobs_col.find_one({"_id": ObjectId(job_id)})
+    job = await jobs_col.find_one({"_id": ObjectId(job_id), "created_by": current_user["email"]})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     candidates = []
-    async for c in candidates_col.find({"job_id": job_id}):
+    async for c in candidates_col.find({"job_id": job_id, "created_by": current_user["email"]}):
         candidates.append(c)
 
     if not candidates:
@@ -796,7 +859,9 @@ async def rank_resumes(
                 print("[SUCCESS] Candidate ranking saved")
         return {"ranked": 0, "message": "Ranking skipped, no JD found"}
 
-    ranked = await rank_all_resumes(jd_text, candidates, job=job)
+    from routes.settings import get_recruiter_weights
+    weights = await get_recruiter_weights(current_user)
+    ranked = await rank_all_resumes(jd_text, candidates, job=job, weights=weights)
 
     for item in ranked:
         cid = item["_id"]
@@ -917,10 +982,10 @@ async def admin_rerank_all(
     from services.llm_parser import parse_resume_with_llm
     
     # 1. Fetch all jobs and candidates
-    jobs = await jobs_col.find({}).to_list(None)
+    jobs = await jobs_col.find({"created_by": current_user["email"]}).to_list(None)
     job_map = {str(j["_id"]): j for j in jobs}
     
-    candidates = await candidates_col.find({}).to_list(None)
+    candidates = await candidates_col.find({"created_by": current_user["email"]}).to_list(None)
     
     reranked_count = 0
     from collections import defaultdict
@@ -1187,7 +1252,9 @@ async def dashboard_stats(
     job_id: Optional[str] = Query(None),
     current_user=Depends(get_current_user),
 ):
-    match_q = {"job_id": job_id} if job_id else {}
+    match_q = {"created_by": current_user["email"]}
+    if job_id:
+        match_q["job_id"] = job_id
 
     pipeline = [
         {"$match": match_q},

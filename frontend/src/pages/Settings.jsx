@@ -3,6 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import Sidebar from '../components/Sidebar';
 import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
 import {
   MdPerson, MdNotifications, MdStickyNote2, MdFolder,
   MdTune, MdEmail, MdLock, MdSave, MdAdd, MdDelete,
@@ -75,41 +76,58 @@ const Accordion = ({ title, children }) => {
 
 // ── Sections ────────────────────────────────────────────────────────────────
 function AccountSection() {
+  const { user, updateProfile } = useAuth();
   const [form, setForm] = useState({ name: '', company: '', role: '' });
   const [pass, setPass] = useState({ current: '', next: '', confirm: '' });
   const [showP, setShowP] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    setForm({ name: user.name || '', company: user.company || '', role: user.role || 'HR Recruiter' });
-  }, []);
+    if (user) {
+      setForm({
+        name: user.name || '',
+        company: user.company_name || '',
+        role: user.role || 'HR Recruiter'
+      });
+    }
+  }, [user]);
 
-  const save = () => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    localStorage.setItem('user', JSON.stringify({ ...user, ...form }));
-    toast.success('Profile saved');
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateProfile({
+        name: form.name,
+        company_name: form.company,
+        role: form.role
+      });
+      toast.success('Profile saved successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to save profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const changePass = () => {
+  const changePass = async () => {
     if (pass.next !== pass.confirm) return toast.error('Passwords do not match');
     if (pass.next.length < 6) return toast.error('Password must be at least 6 characters');
-    toast.success('Password updated (demo mode)');
-    setPass({ current: '', next: '', confirm: '' });
+    try {
+      await updateProfile({ password: pass.next });
+      toast.success('Password updated successfully');
+      setPass({ current: '', next: '', confirm: '' });
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to update password');
+    }
   };
 
   return (
     <Section icon={<MdPerson />} title="Account & Profile" subtitle="Manage your recruiter identity" accent="#6366f1">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
         <Field label="Full Name"><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Your full name" /></Field>
         <Field label="Job Title / Role"><Input value={form.role} onChange={e => setForm({ ...form, role: e.target.value })} placeholder="HR Recruiter" /></Field>
         <Field label="Company Name"><Input value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} placeholder="Acme Corp" /></Field>
-        <Field label="Profile Photo">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', border: '1.5px dashed #c7d2fe', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#6366f1', fontWeight: 600 }}>
-            <MdUpload /> Upload Photo <input type="file" accept="image/*" hidden />
-          </label>
-        </Field>
       </div>
-      <Btn onClick={save} style={{ marginTop: 8 }}><MdSave /> Save Profile</Btn>
+      <Btn onClick={save} disabled={saving} style={{ marginTop: 8 }}><MdSave /> {saving ? 'Saving...' : 'Save Profile'}</Btn>
 
       <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1px solid #f1f5f9' }}>
         <div style={{ fontWeight: 600, fontSize: 14, color: '#1e293b', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><MdLock style={{ color: '#6366f1' }} /> Change Password</div>
@@ -131,154 +149,7 @@ function AccountSection() {
   );
 }
 
-function NotificationsSection() {
-  const [prefs, setPrefs] = useState({ emailNotifications: true, interviewReminders: true, aiReports: true, dailySummary: false, reminderMinutes: 15 });
-  const toggle = k => setPrefs(p => ({ ...p, [k]: !p[k] }));
-  return (
-    <Section icon={<MdNotifications />} title="Notification Preferences" subtitle="Control when and how you get notified" accent="#f59e0b">
-      <Toggle checked={prefs.emailNotifications} onChange={() => toggle('emailNotifications')} label="Email notifications for new candidate activity" />
-      <Toggle checked={prefs.interviewReminders} onChange={() => toggle('interviewReminders')} label="Interview reminder emails before sessions" />
-      <Toggle checked={prefs.aiReports} onChange={() => toggle('aiReports')} label="AI report ready notifications" />
-      <Toggle checked={prefs.dailySummary} onChange={() => toggle('dailySummary')} label="Daily hiring pipeline summary (7:00 AM)" />
-      <Field label="Reminder timing (minutes before interview)">
-        <Select value={prefs.reminderMinutes} onChange={e => setPrefs(p => ({ ...p, reminderMinutes: +e.target.value }))}>
-          {[5, 10, 15, 30, 60].map(m => <option key={m} value={m}>{m} minutes before</option>)}
-        </Select>
-      </Field>
-      <Btn onClick={() => toast.success('Preferences saved')}><MdSave /> Save Preferences</Btn>
-    </Section>
-  );
-}
 
-function NotesSection() {
-  const [notes, setNotes] = useState(() => JSON.parse(localStorage.getItem('hr_notes') || '[]'));
-  const [text, setText] = useState('');
-  const [type, setType] = useState('note');
-
-  const add = () => {
-    if (!text.trim()) return;
-    const n = [...notes, { id: Date.now(), text, type, created: new Date().toLocaleString() }];
-    setNotes(n);
-    localStorage.setItem('hr_notes', JSON.stringify(n));
-    setText('');
-    toast.success('Note added');
-  };
-
-  const del = id => {
-    const n = notes.filter(x => x.id !== id);
-    setNotes(n);
-    localStorage.setItem('hr_notes', JSON.stringify(n));
-  };
-
-  const colors = { note: '#fef3c7', reminder: '#dbeafe', task: '#d1fae5', observation: '#ede9fe' };
-  const labels = { note: 'Note', reminder: 'Reminder', task: 'Task', observation: 'Observation' };
-
-  return (
-    <Section icon={<MdStickyNote2 />} title="HR Notes & Reminder Workspace" subtitle="Private recruiter workspace — sticky notes, tasks, follow-ups" accent="#8b5cf6">
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-        <Select value={type} onChange={e => setType(e.target.value)} style={{ width: 160 }}>
-          <option value="note">Note</option>
-          <option value="reminder">Reminder</option>
-          <option value="task">Task</option>
-          <option value="observation">Observation</option>
-        </Select>
-        <input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Add a note, task, or follow-up reminder..." style={{ flex: 1, padding: '10px 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, fontSize: 13, outline: 'none' }} />
-        <Btn onClick={add} variant="primary"><MdAdd /> Add</Btn>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
-        {notes.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#94a3b8', padding: 40, fontSize: 13 }}>No notes yet. Add your first recruiter note above.</div>}
-        {notes.map(n => (
-          <div key={n.id} style={{ background: colors[n.type], borderRadius: 12, padding: 16, position: 'relative', minHeight: 90, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', marginBottom: 8 }}>{labels[n.type]}</div>
-            <div style={{ fontSize: 13, color: '#1e293b', fontWeight: 500, lineHeight: 1.5 }}>{n.text}</div>
-            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 10 }}>{n.created}</div>
-            <button onClick={() => del(n.id)} style={{ position: 'absolute', top: 10, right: 10, background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2 }}><MdDelete size={16} /></button>
-          </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-function VaultSection() {
-  const [files, setFiles] = useState(() => JSON.parse(localStorage.getItem('hr_vault') || '[]'));
-  const [category, setCategory] = useState('interview_template');
-  const fileRef = useRef();
-
-  const upload = (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const entry = { id: Date.now(), name: f.name, size: (f.size / 1024).toFixed(1) + ' KB', category, uploaded: new Date().toLocaleString() };
-    const updated = [...files, entry];
-    setFiles(updated);
-    localStorage.setItem('hr_vault', JSON.stringify(updated));
-    toast.success(`${f.name} uploaded to vault`);
-  };
-
-  const del = id => {
-    const updated = files.filter(f => f.id !== id);
-    setFiles(updated);
-    localStorage.setItem('hr_vault', JSON.stringify(updated));
-  };
-
-  const catLabels = { interview_template: 'Interview Template', evaluation_form: 'Evaluation Form', onboarding: 'Onboarding Doc', policy: 'HR Policy', other: 'Other' };
-  const catColor = { interview_template: '#dbeafe', evaluation_form: '#d1fae5', onboarding: '#fef3c7', policy: '#fee2e2', other: '#f1f5f9' };
-
-  return (
-    <Section icon={<MdFolder />} title="HR Secure Vault" subtitle="Private recruiter-only document storage" accent="#10b981">
-      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
-        <Select value={category} onChange={e => setCategory(e.target.value)} style={{ width: 220 }}>
-          {Object.entries(catLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </Select>
-        <Btn onClick={() => fileRef.current.click()} variant="primary"><MdUpload /> Upload File</Btn>
-        <input ref={fileRef} type="file" hidden onChange={upload} />
-      </div>
-      {files.length === 0 && <div style={{ textAlign: 'center', color: '#94a3b8', padding: 40, border: '2px dashed #e2e8f0', borderRadius: 12, fontSize: 13 }}>No files uploaded yet. Upload interview templates, evaluation forms, or onboarding docs.</div>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {files.map(f => (
-          <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', background: catColor[f.category], borderRadius: 10 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: '#1e293b' }}>{f.name}</div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>{catLabels[f.category]} • {f.size} • {f.uploaded}</div>
-            </div>
-            <button onClick={() => del(f.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 4 }}><MdDelete size={16} /></button>
-          </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-function AIPrefsSection() {
-  const [prefs, setPrefs] = useState({ rankStrictness: 70, autoShortlistThreshold: 75, monitoringSensitivity: 'medium', recommendationMode: 'balanced' });
-  return (
-    <Section icon={<MdPsychology />} title="AI Intelligence Preferences" subtitle="Fine-tune how the AI ranks, recommends, and evaluates candidates" accent="#4f46e5">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <Field label={`Ranking Strictness — ${prefs.rankStrictness}%`} hint="Higher = only top-tier candidates score well">
-          <input type="range" min={40} max={95} value={prefs.rankStrictness} onChange={e => setPrefs(p => ({ ...p, rankStrictness: +e.target.value }))} style={{ width: '100%', accentColor: '#6366f1' }} />
-        </Field>
-        <Field label={`Auto-Shortlist Threshold — ${prefs.autoShortlistThreshold}%`} hint="Candidates above this score are auto-shortlisted">
-          <input type="range" min={50} max={95} value={prefs.autoShortlistThreshold} onChange={e => setPrefs(p => ({ ...p, autoShortlistThreshold: +e.target.value }))} style={{ width: '100%', accentColor: '#10b981' }} />
-        </Field>
-        <Field label="Interview Monitoring Sensitivity" hint="How aggressively AI flags suspicious behavior">
-          <Select value={prefs.monitoringSensitivity} onChange={e => setPrefs(p => ({ ...p, monitoringSensitivity: e.target.value }))}>
-            <option value="low">Low — flag only obvious violations</option>
-            <option value="medium">Medium — balanced detection</option>
-            <option value="high">High — flag all anomalies</option>
-          </Select>
-        </Field>
-        <Field label="AI Recommendation Mode" hint="How aggressive AI hiring suggestions are">
-          <Select value={prefs.recommendationMode} onChange={e => setPrefs(p => ({ ...p, recommendationMode: e.target.value }))}>
-            <option value="conservative">Conservative — high confidence only</option>
-            <option value="balanced">Balanced — standard mode</option>
-            <option value="aggressive">Aggressive — maximize candidate flow</option>
-          </Select>
-        </Field>
-      </div>
-      <Btn onClick={() => toast.success('AI preferences saved')}><MdSave /> Save AI Settings</Btn>
-    </Section>
-  );
-}
 
 function EmailSection() {
   const [config, setConfig] = useState({ provider: 'gmail', smtp_host: 'smtp.gmail.com', smtp_port: 587, smtp_user: '', smtp_password: '', from_email: '', app_name: 'AI Hiring Platform', use_tls: true });
@@ -340,13 +211,144 @@ function EmailSection() {
   );
 }
 
+function RankingConfigSection() {
+  const [preset, setPreset] = useState('Software Engineer');
+  const [weights, setWeights] = useState({
+    skills: 40,
+    experience: 25,
+    semantic: 15,
+    projects: 10,
+    certifications: 5,
+    quality: 5
+  });
+  const [saving, setSaving] = useState(false);
+
+  const presets = {
+    'Software Engineer': { skills: 40, experience: 25, semantic: 15, projects: 10, certifications: 5, quality: 5 },
+    'Fresher Hiring': { skills: 30, experience: 5, semantic: 20, projects: 25, certifications: 10, quality: 10 },
+    'Senior Hiring': { skills: 30, experience: 40, semantic: 10, projects: 10, certifications: 5, quality: 5 },
+    'Data Science': { skills: 45, experience: 20, semantic: 15, projects: 10, certifications: 5, quality: 5 },
+    'Custom': null
+  };
+
+  useEffect(() => {
+    axios.get(`${API}/settings/ranking`, { headers: hdr() })
+      .then(res => {
+        if (res.data) {
+          setPreset(res.data.preset || 'Software Engineer');
+          if (res.data.weights) {
+            setWeights(res.data.weights);
+          }
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load ranking settings', err);
+      });
+  }, []);
+
+  const handlePresetChange = (p) => {
+    setPreset(p);
+    if (presets[p]) {
+      setWeights(presets[p]);
+    }
+  };
+
+  const handleWeightChange = (key, val) => {
+    const intVal = parseInt(val) || 0;
+    const clamped = Math.max(0, Math.min(100, intVal));
+    
+    setWeights(prev => {
+      const updated = { ...prev, [key]: clamped };
+      // Check if matches any preset. If not, set to Custom
+      let matchedPreset = 'Custom';
+      for (const [name, w] of Object.entries(presets)) {
+        if (w && Object.keys(w).every(k => w[k] === updated[k])) {
+          matchedPreset = name;
+          break;
+        }
+      }
+      setPreset(matchedPreset);
+      return updated;
+    });
+  };
+
+  const total = weights.skills + weights.experience + weights.semantic + weights.projects + weights.certifications + weights.quality;
+  const isValid = total === 100;
+
+  const save = async () => {
+    if (!isValid) return;
+    setSaving(true);
+    try {
+      await axios.post(`${API}/settings/ranking`, { preset, weights }, { headers: hdr() });
+      toast.success('Ranking weights updated successfully');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Section icon={<MdTune />} title="Candidate Ranking Configuration" subtitle="Configure weight distribution to customize AI evaluation criteria" accent="#6366f1">
+      <div style={{ marginBottom: 20 }}>
+        <Field label="Configuration Preset" hint="Select a standard preset or adjust values to create a custom weighting mix.">
+          <Select value={preset} onChange={e => handlePresetChange(e.target.value)}>
+            {Object.keys(presets).map(name => <option key={name} value={name}>{name}</option>)}
+          </Select>
+        </Field>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+        <Field label={`Skills Match — ${weights.skills}%`} hint="Relevance of candidate skills against JD required/preferred skills.">
+          <input type="range" min={0} max={100} value={weights.skills} onChange={e => handleWeightChange('skills', e.target.value)} style={{ width: '100%', accentColor: '#6366f1' }} />
+        </Field>
+        <Field label={`Experience Match — ${weights.experience}%`} hint="Total and relevant professional tenure compared to requirements.">
+          <input type="range" min={0} max={100} value={weights.experience} onChange={e => handleWeightChange('experience', e.target.value)} style={{ width: '100%', accentColor: '#6366f1' }} />
+        </Field>
+        <Field label={`Semantic Similarity — ${weights.semantic}%`} hint="Sentence-transformer textual correlation of resume and JD.">
+          <input type="range" min={0} max={100} value={weights.semantic} onChange={e => handleWeightChange('semantic', e.target.value)} style={{ width: '100%', accentColor: '#6366f1' }} />
+        </Field>
+        <Field label={`Projects — ${weights.projects}%`} hint="Presence and relevance of documented projects.">
+          <input type="range" min={0} max={100} value={weights.projects} onChange={e => handleWeightChange('projects', e.target.value)} style={{ width: '100%', accentColor: '#6366f1' }} />
+        </Field>
+        <Field label={`Certifications — ${weights.certifications}%`} hint="Alignment of professional certifications.">
+          <input type="range" min={0} max={100} value={weights.certifications} onChange={e => handleWeightChange('certifications', e.target.value)} style={{ width: '100%', accentColor: '#6366f1' }} />
+        </Field>
+        <Field label={`Resume Quality — ${weights.quality}%`} hint="Format, depth, layout completeness, and lack of warning indicators.">
+          <input type="range" min={0} max={100} value={weights.quality} onChange={e => handleWeightChange('quality', e.target.value)} style={{ width: '100%', accentColor: '#6366f1' }} />
+        </Field>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 16, background: isValid ? '#f0fdf4' : '#fef2f2', border: `1px solid ${isValid ? '#bbf7d0' : '#fecaca'}`, borderRadius: 12, marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 600, fontSize: 14, color: isValid ? '#166534' : '#991b1b' }}>
+            Total Allocated Weight:
+          </span>
+          <span style={{ fontWeight: 700, fontSize: 18, color: isValid ? '#15803d' : '#dc2626' }}>
+            {total}%
+          </span>
+        </div>
+        {!isValid && (
+          <p style={{ margin: 0, fontSize: 12, color: '#b91c1c' }}>
+            ⚠️ Sum of weights must equal exactly 100%. Please adjust sliders (current gap: {100 - total}%).
+          </p>
+        )}
+        {isValid && (
+          <p style={{ margin: 0, fontSize: 12, color: '#166534' }}>
+            ✅ Weights are perfectly balanced! Ready to save.
+          </p>
+        )}
+      </div>
+
+      <Btn onClick={save} disabled={!isValid || saving}><MdSave /> {saving ? 'Saving...' : 'Save Ranking Config'}</Btn>
+    </Section>
+  );
+}
+
 // ── Navigation tabs ─────────────────────────────────────────────────────────
 const TABS = [
   { id: 'account', label: 'Account', icon: <MdPerson /> },
-  { id: 'notifications', label: 'Notifications', icon: <MdNotifications /> },
-  { id: 'notes', label: 'Workspace', icon: <MdStickyNote2 /> },
-  { id: 'vault', label: 'Vault', icon: <MdFolder /> },
-  { id: 'ai', label: 'AI Settings', icon: <MdPsychology /> },
+  { id: 'ranking', label: 'Ranking Config', icon: <MdTune /> },
   { id: 'email', label: 'Email Config', icon: <MdEmail /> },
 ];
 
@@ -375,13 +377,11 @@ export default function Settings() {
 
           {/* Content */}
           {activeTab === 'account'       && <AccountSection />}
-          {activeTab === 'notifications' && <NotificationsSection />}
-          {activeTab === 'notes'         && <NotesSection />}
-          {activeTab === 'vault'         && <VaultSection />}
-          {activeTab === 'ai'            && <AIPrefsSection />}
+          {activeTab === 'ranking'       && <RankingConfigSection />}
           {activeTab === 'email'         && <EmailSection />}
         </div>
       </main>
     </div>
   );
 }
+

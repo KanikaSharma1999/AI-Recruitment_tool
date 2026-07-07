@@ -39,9 +39,34 @@ def decrypt_password(encrypted_password: str) -> str:
         return encrypted_password # Fallback if not encrypted
 
 # --- Dynamic Settings ---
-async def get_db_email_settings():
-    """Bypassed: We only read email settings from .env now."""
-    return None
+async def get_db_email_settings(recruiter_email: str = None):
+    """Retrieve email settings from settings collection for the recruiter."""
+    if not recruiter_email:
+        return None
+    try:
+        from database import settings_col
+        doc = await settings_col.find_one({"type": "email_config", "email": recruiter_email})
+        if not doc:
+            return None
+        
+        # Decrypt password if it exists
+        smtp_pass = doc.get("smtp_password")
+        if smtp_pass:
+            smtp_pass = decrypt_password(smtp_pass)
+            
+        return {
+            "smtp_host":     doc.get("smtp_host"),
+            "smtp_port":     doc.get("smtp_port"),
+            "smtp_user":     doc.get("smtp_user"),
+            "smtp_password": smtp_pass,
+            "from_email":    doc.get("from_email"),
+            "app_name":      doc.get("app_name"),
+            "use_tls":       doc.get("use_tls", True),
+        }
+    except Exception as e:
+        logger.error(f"[EmailService] Error getting DB settings for {recruiter_email}: {e}")
+        return None
+
 
 def get_fallback_settings():
     """Returns settings from .env as fallback.
@@ -75,7 +100,7 @@ def print_env_diagnostics():
     print(f"SMTP SERVER: {server if server else 'NOT SET'}\n", flush=True)
 
 # --- Core Sending Logic ---
-async def send_email(to_email: str, subject: str, body_html: str, body_text: str = "", settings_override=None):
+async def send_email(to_email: str, subject: str, body_html: str, body_text: str = "", settings_override=None, recruiter_email: str = None):
     """Sends an HTML email. Full step-by-step logging — no silent failures."""
     import traceback as _tb
 
@@ -86,10 +111,12 @@ async def send_email(to_email: str, subject: str, body_html: str, body_text: str
 
     # --- Load settings ---
     print("  [1] Loading SMTP settings...")
-    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", ".env")
-    load_dotenv(dotenv_path=env_path, override=True)
     
-    settings = settings_override or get_fallback_settings()
+    settings = settings_override
+    if not settings and recruiter_email:
+        settings = await get_db_email_settings(recruiter_email)
+    if not settings:
+        settings = get_fallback_settings()
 
     smtp_host  = settings.get("smtp_host")
     smtp_port  = int(settings.get("smtp_port")) if settings.get("smtp_port") else None

@@ -19,6 +19,8 @@ class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = None
+    role: Optional[str] = None
+    company_name: Optional[str] = None
 
 
 class Token(BaseModel):
@@ -61,3 +63,11 @@ class EmailSettings(BaseModel):
     smtp_password: str
     from_email: str
     app_name: Optional[str] = "AI Hiring Platform"
+
+
+class UserRegister(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    company_name: Optional[str] = ""
+

@@ -57,7 +57,7 @@ async def create_job(job: JobCreate, current_user=Depends(get_current_user)):
 @router.get("/list")
 async def list_jobs(current_user=Depends(get_current_user)):
     jobs = []
-    async for job in jobs_col.find().sort("created_at", -1):
+    async for job in jobs_col.find({"created_by": current_user["email"]}).sort("created_at", -1):
         j = serialize(job)
         j["candidate_count"] = await candidates_col.count_documents({"job_id": j["id"]})
         jobs.append(j)
@@ -65,7 +65,7 @@ async def list_jobs(current_user=Depends(get_current_user)):
 
 @router.get("/{job_id}")
 async def get_job(job_id: str, current_user=Depends(get_current_user)):
-    job = await jobs_col.find_one({"_id": ObjectId(job_id)})
+    job = await jobs_col.find_one({"_id": ObjectId(job_id), "created_by": current_user["email"]})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return serialize(job)
@@ -73,7 +73,7 @@ async def get_job(job_id: str, current_user=Depends(get_current_user)):
 @router.delete("/{job_id}")
 async def delete_job(job_id: str, current_user=Depends(get_current_user)):
     try:
-        job = await jobs_col.find_one({"_id": ObjectId(job_id)})
+        job = await jobs_col.find_one({"_id": ObjectId(job_id), "created_by": current_user["email"]})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid job ID format")
         
@@ -120,7 +120,7 @@ async def get_shortlisted_report(
     current_user=Depends(get_current_user)
 ):
     try:
-        job = await jobs_col.find_one({"_id": ObjectId(job_id)})
+        job = await jobs_col.find_one({"_id": ObjectId(job_id), "created_by": current_user["email"]})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid job ID format")
     if not job:

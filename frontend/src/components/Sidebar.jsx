@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   MdDashboard, MdPeople, MdWork, MdCloudUpload,
-  MdSettings, MdBarChart, MdCompare,
+  MdSettings, MdBarChart, MdCompare, MdFolder,
 } from 'react-icons/md';
 
 const NAV = [
@@ -11,6 +11,7 @@ const NAV = [
   { to: '/jobs',       icon: <MdWork />,      label: 'Jobs' },
   { to: '/upload',     icon: <MdCloudUpload />, label: 'Upload Resumes' },
   { to: '/compare',    icon: <MdCompare />,   label: 'Compare' },
+  { to: '/workspace',  icon: <MdFolder />,    label: 'HR Workspace' },
 ];
 
 const BOTTOM_NAV = [
@@ -89,7 +90,11 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer" style={{ borderTop: '1px solid var(--sidebar-border)', background: '#0b0f19' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <div 
+          onClick={() => navigate('/settings')}
+          style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}
+          title="Go to Settings"
+        >
           <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--purple))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
             {(user?.name || user?.email || 'U')[0].toUpperCase()}
           </div>

@@ -61,8 +61,12 @@ async def schedule_interview(
     from database import jobs_col
     import os
     
-    candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
-    job = await jobs_col.find_one({"_id": ObjectId(interview.job_id)})
+    candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id), "created_by": current_user["email"]})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    job = await jobs_col.find_one({"_id": ObjectId(interview.job_id), "created_by": current_user["email"]})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
     
     from services.notification_service import notification_service
     
@@ -293,7 +297,7 @@ async def record_proctoring_event(violation: ProctoringViolation):
 @router.get("/proctoring-live/{candidate_id}")
 async def get_live_proctoring(candidate_id: str, current_user=Depends(get_current_user)):
     """Recruiter polls this for live proctoring status."""
-    candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id)})
+    candidate = await candidates_col.find_one({"_id": ObjectId(candidate_id), "created_by": current_user["email"]})
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -689,7 +693,7 @@ async def generate_interview_questions(
     """
     from database import jobs_col, candidates_col
 
-    job = await jobs_col.find_one({"_id": ObjectId(req.job_id)})
+    job = await jobs_col.find_one({"_id": ObjectId(req.job_id), "created_by": current_user["email"]})
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -702,7 +706,7 @@ async def generate_interview_questions(
     candidate = None
     if req.candidate_id:
         try:
-            candidate = await candidates_col.find_one({"_id": ObjectId(req.candidate_id)})
+            candidate = await candidates_col.find_one({"_id": ObjectId(req.candidate_id), "created_by": current_user["email"]})
         except Exception:
             pass
     if candidate:
@@ -763,7 +767,7 @@ async def get_recruiter_token(
     req: TokenRequest,
     current_user=Depends(get_current_user),
 ):
-    candidate = await candidates_col.find_one({"_id": ObjectId(req.candidate_id)})
+    candidate = await candidates_col.find_one({"_id": ObjectId(req.candidate_id), "created_by": current_user["email"]})
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
     

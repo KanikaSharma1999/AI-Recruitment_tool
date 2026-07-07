@@ -232,6 +232,8 @@ jobs_col = SafeCollection("jobs")
 candidates_col = SafeCollection("candidates")
 settings_col = SafeCollection("settings")
 interview_sessions_col = SafeCollection("interview_sessions")
+workspace_notes_col = SafeCollection("workspace_notes")
+workspace_files_col = SafeCollection("workspace_files")
 
 async def init_db():
     import asyncio
@@ -310,3 +312,33 @@ async def run_db_migrations():
         logger.info(f"[Migration] Pipeline stage normalization completed. Updated {updated_count} candidates.")
     except Exception as e:
         logger.error(f"[Migration] Failed to run pipeline stage normalization: {e}")
+
+    # 2. Candidate created_by migration
+    try:
+        jobs_col = db_manager.db["jobs"]
+        candidates_col = db_manager.db["candidates"]
+        
+        job_map = {}
+        async for job in jobs_col.find({}):
+            job_id_str = str(job["_id"])
+            created_by = job.get("created_by")
+            if created_by:
+                job_map[job_id_str] = created_by
+                
+        updated_candidates_count = 0
+        async for candidate in candidates_col.find({"created_by": {"$exists": False}}):
+            job_id = candidate.get("job_id")
+            creator_email = job_map.get(str(job_id)) if job_id else None
+            if not creator_email:
+                creator_email = "sandhyagowda506@gmail.com" # Default fallback for legacy orphans
+            
+            await candidates_col.update_one(
+                {"_id": candidate["_id"]},
+                {"$set": {"created_by": creator_email}}
+            )
+            updated_candidates_count += 1
+            
+        logger.info(f"[Migration] Candidate created_by migration completed. Updated {updated_candidates_count} candidates.")
+    except Exception as e:
+        logger.error(f"[Migration] Failed to run candidate created_by migration: {e}")
+

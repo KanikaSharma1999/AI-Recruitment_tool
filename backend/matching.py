@@ -9,6 +9,9 @@ Scoring weights:
   Certifications      5%
   Resume Quality      5%
 
+Embedding model: BAAI/bge-large-en-v1.5 (1024-dim)
+  Upgraded from all-MiniLM-L6-v2 (384-dim) for better semantic understanding.
+
 Target distribution:
   90-100  Exceptional
   80-89   Strong Hire
@@ -42,7 +45,7 @@ def get_model():
     if _model is None:
         try:
             from sentence_transformers import SentenceTransformer
-            _model = SentenceTransformer("all-MiniLM-L6-v2")
+            _model = SentenceTransformer("BAAI/bge-large-en-v1.5")
         except Exception as e:
             logger.error(f"[Matching] Model load failed: {e}")
             _model = None
@@ -54,9 +57,9 @@ def _clamp(val: float, lo: float = 0.0, hi: float = 100.0) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Skill synonym map (normalisation)
+# Skill normalization — delegates to Master Skill Normalization Engine
 # ---------------------------------------------------------------------------
-SYNONYMS = {
+_local_synonyms = {
     "reactjs": "react", "react.js": "react", "react js": "react",
     "angularjs": "angular", "angular js": "angular",
     "vuejs": "vue", "vue.js": "vue",
@@ -77,8 +80,15 @@ SYNONYMS = {
 }
 
 def normalize_skill(skill: str) -> str:
-    s = skill.lower().strip()
-    return SYNONYMS.get(s, s)
+    """Normalize a skill token using the centralized skill normalizer."""
+    try:
+        from services.skill_normalizer import normalize_skill as _norm
+        result = _norm(skill)
+        return result if result else skill.lower().strip()
+    except ImportError:
+        # Fallback to local synonym map
+        s = skill.lower().strip()
+        return _local_synonyms.get(s, s)
 
 
 # ---------------------------------------------------------------------------
@@ -377,11 +387,20 @@ def score_to_verdict(score: float) -> str:
 # ---------------------------------------------------------------------------
 # MAIN ENTRY POINT
 # ---------------------------------------------------------------------------
-async def rank_all_resumes(jd_text: str, candidates: list, job: dict = None) -> list:
+async def rank_all_resumes(jd_text: str, candidates: list, job: dict = None, weights: dict = None) -> list:
     """
     Anti-inflation enterprise ranking engine.
     Produces realistic score distribution with hard penalties.
     """
+    if weights is None:
+        weights = {
+            "skills": 0.40,
+            "experience": 0.25,
+            "semantic": 0.15,
+            "projects": 0.10,
+            "certifications": 0.05,
+            "quality": 0.05
+        }
     # Parse JD
     jd_profile = None
     if job:
@@ -489,9 +508,9 @@ async def rank_all_resumes(jd_text: str, candidates: list, job: dict = None) -> 
                 required_skills,
                 cand_skills_list,
             )
-            skills_weight = skill_score * 0.40
+            skills_weight = skill_score * weights.get("skills", 0.40)
 
-            # ── Step 4: EXPERIENCE (25%) ────────────────────────────────
+            # ── Step 4: EXPERIENCE ────────────────────────────────
             effective_exp = max(relevant_exp, total_exp)
             if minimum_exp <= 0:
                 # No explicit requirement — score based on what they have
@@ -504,13 +523,13 @@ async def rank_all_resumes(jd_text: str, candidates: list, job: dict = None) -> 
                     # Candidate is short on experience
                     ratio = effective_exp / minimum_exp
                     exp_score = _clamp(ratio * 100.0)
-            exp_weight = exp_score * 0.25
+            exp_weight = exp_score * weights.get("experience", 0.25)
 
-            # ── Step 5: SEMANTIC SIMILARITY (15%) ──────────────────────
+            # ── Step 5: SEMANTIC SIMILARITY ──────────────────────
             sem_score  = compute_semantic_similarity(jd_text, raw_text)
-            sem_weight = sem_score * 0.15
+            sem_weight = sem_score * weights.get("semantic", 0.15)
 
-            # ── Step 6: PROJECTS (10%) ─────────────────────────────────
+            # ── Step 6: PROJECTS ─────────────────────────────────
             proj_reqs  = jd_profile.get("project_requirements", [])
             cand_projs = candidate_profile.get("projects", [])
             if not proj_reqs:
@@ -524,9 +543,9 @@ async def rank_all_resumes(jd_text: str, candidates: list, job: dict = None) -> 
                     if any(str(r).lower() in p_str.lower() for r in proj_reqs):
                         matched_p.append(p)
                 project_score = _clamp((len(matched_p) / len(proj_reqs)) * 100)
-            proj_weight = project_score * 0.10
+            proj_weight = project_score * weights.get("projects", 0.10)
 
-            # ── Step 7: CERTIFICATIONS (5%) ────────────────────────────
+            # ── Step 7: CERTIFICATIONS ────────────────────────────
             cert_reqs  = jd_profile.get("certifications_required", [])
             cand_certs = candidate_profile.get("certifications", [])
             if not cert_reqs:
@@ -538,11 +557,11 @@ async def rank_all_resumes(jd_text: str, candidates: list, job: dict = None) -> 
                     if any(str(r).lower() in c_str.lower() for r in cert_reqs):
                         matched_c.append(c)
                 cert_score = _clamp((len(matched_c) / len(cert_reqs)) * 100)
-            cert_weight = cert_score * 0.05
+            cert_weight = cert_score * weights.get("certifications", 0.05)
 
-            # ── Step 8: RESUME QUALITY (5%) ────────────────────────────
+            # ── Step 8: RESUME QUALITY ────────────────────────────
             quality_score, quality_penalties = compute_quality_score(candidate_profile, raw_text)
-            quality_weight = quality_score * 0.05
+            quality_weight = quality_score * weights.get("quality", 0.05)
 
             # ── Weighted sum ────────────────────────────────────────────
             raw_final = (

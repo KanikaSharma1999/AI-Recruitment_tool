@@ -10,10 +10,11 @@ from services.email_service import (
     get_db_email_settings,
     get_fallback_settings,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import smtplib
 import traceback as tb
 import os
+from datetime import datetime
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -60,88 +61,97 @@ def update_env_file(updates: dict):
 
 @router.get("/email")
 async def get_email_settings(current_user=Depends(get_current_user)):
-    """Retrieve email settings, masking the password."""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can view settings")
+    """Retrieve email settings from DB, masking the password."""
+    email = current_user["email"]
     
-    # Force reload env
-    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", ".env")
-    from dotenv import load_dotenv
-    load_dotenv(dotenv_path=env_path, override=True)
-    
-    smtp_host = os.getenv("SMTP_SERVER", "")
-    smtp_port = os.getenv("SMTP_PORT", "")
-    smtp_user = os.getenv("SMTP_USERNAME", "")
-    smtp_password = os.getenv("SMTP_PASSWORD", "")
-    from_email = os.getenv("EMAIL_FROM", "")
-    app_name = os.getenv("APP_NAME", "")
-    
+    doc = await settings_col.find_one({"type": "email_config", "email": email})
+    if not doc:
+        return {
+            "provider": "gmail",
+            "smtp_host": "",
+            "smtp_port": "",
+            "smtp_user": "",
+            "smtp_password": "",
+            "from_email": "",
+            "app_name": "HireIQ",
+            "use_tls": True
+        }
+        
+    smtp_password = doc.get("smtp_password", "")
     masked_password = ""
     if smtp_password:
         masked_password = "********"
         
     return {
         "provider": "gmail",
-        "smtp_host": smtp_host,
-        "smtp_port": int(smtp_port) if smtp_port else "",
-        "smtp_user": smtp_user,
+        "smtp_host": doc.get("smtp_host", ""),
+        "smtp_port": doc.get("smtp_port", ""),
+        "smtp_user": doc.get("smtp_user", ""),
         "smtp_password": masked_password,
-        "from_email": from_email,
-        "app_name": app_name,
-        "use_tls": True
+        "from_email": doc.get("from_email", ""),
+        "app_name": doc.get("app_name", "HireIQ"),
+        "use_tls": doc.get("use_tls", True)
     }
 
 
 @router.post("/email")
 async def save_email_settings(settings: EmailSettings, current_user=Depends(get_current_user)):
-    """Save/Update email settings securely."""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can modify settings")
+    """Save/Update email settings securely in MongoDB per recruiter."""
+    user_id = str(current_user["_id"])
+    email = current_user["email"]
     config_dict = settings.model_dump()
-    
-    # Force reload env to check existing password
-    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", ".env")
-    from dotenv import load_dotenv
-    load_dotenv(dotenv_path=env_path, override=True)
     
     smtp_password = config_dict.get("smtp_password", "")
     if smtp_password == "********":
-        smtp_password = os.getenv("SMTP_PASSWORD", "")
+        existing = await settings_col.find_one({"type": "email_config", "email": email})
+        if existing:
+            smtp_password = existing.get("smtp_password", "")
+        else:
+            smtp_password = ""
+    else:
+        from services.email_service import encrypt_password
+        smtp_password = encrypt_password(smtp_password)
+        
+    doc = {
+        "type": "email_config",
+        "user_id": user_id,
+        "email": email,
+        "smtp_host": config_dict.get("smtp_host", ""),
+        "smtp_port": config_dict.get("smtp_port"),
+        "smtp_user": config_dict.get("smtp_user", ""),
+        "smtp_password": smtp_password,
+        "from_email": config_dict.get("from_email", ""),
+        "app_name": config_dict.get("app_name", "HireIQ"),
+        "use_tls": config_dict.get("use_tls", True),
+        "updated_at": datetime.utcnow()
+    }
     
-    # Update .env file
-    update_env_file({
-        "SMTP_SERVER": config_dict.get("smtp_host", ""),
-        "SMTP_PORT": str(config_dict.get("smtp_port", "")),
-        "SMTP_USERNAME": config_dict.get("smtp_user", ""),
-        "SMTP_PASSWORD": smtp_password,
-        "EMAIL_FROM": config_dict.get("from_email", ""),
-        "APP_NAME": config_dict.get("app_name", "")
-    })
-    
-    # Clean/delete from settings collection just in case
-    await settings_col.delete_many({"type": "email_config"})
-    
-    # Reload env again
-    load_dotenv(dotenv_path=env_path, override=True)
-    
+    await settings_col.update_one(
+        {"type": "email_config", "email": email},
+        {"$set": doc},
+        upsert=True
+    )
     return {"message": "Email settings saved successfully"}
 
 
 @router.post("/test-email")
 async def send_test_email(req: TestEmailRequest, current_user=Depends(get_current_user)):
     """Test SMTP configuration by sending a real email."""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can test settings")
+    email = current_user["email"]
     test_settings = req.settings.model_dump()
+    
     if test_settings["smtp_password"] == "********":
-        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", ".env")
-        from dotenv import load_dotenv
-        load_dotenv(dotenv_path=env_path, override=True)
-        test_settings["smtp_password"] = os.getenv("SMTP_PASSWORD", "")
-        
+        existing = await settings_col.find_one({"type": "email_config", "email": email})
+        if existing:
+            from services.email_service import decrypt_password
+            test_settings["smtp_password"] = decrypt_password(existing.get("smtp_password", ""))
+        else:
+            test_settings["smtp_password"] = ""
+            
     success, message = await test_smtp_connection(test_settings)
     if not success:
         raise HTTPException(status_code=400, detail=message)
+        
     html = f"""
     <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
         <h2 style="color: #4f46e5;">Test Email Successful!</h2>
@@ -159,6 +169,7 @@ async def send_test_email(req: TestEmailRequest, current_user=Depends(get_curren
     if not sent:
         raise HTTPException(status_code=500, detail="Failed to send test email despite successful connection.")
     return {"message": "Test email sent successfully to " + req.target_email}
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -305,3 +316,134 @@ async def debug_email_route(current_user=Depends(get_current_user)):
         print(f"[DEBUG-EMAIL] SEND ERROR: {e}")
 
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Recruiter Ranking Configuration Settings
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RankingWeights(BaseModel):
+    skills: int = Field(..., ge=0, le=100)
+    experience: int = Field(..., ge=0, le=100)
+    semantic: int = Field(..., ge=0, le=100)
+    projects: int = Field(..., ge=0, le=100)
+    certifications: int = Field(..., ge=0, le=100)
+    quality: int = Field(..., ge=0, le=100)
+
+class RankingConfigUpdate(BaseModel):
+    preset: str
+    weights: RankingWeights
+
+@router.get("/ranking")
+async def get_ranking_config(current_user=Depends(get_current_user)):
+    """Retrieve the recruiter's ranking configuration."""
+    user_id = str(current_user["_id"])
+    email = current_user["email"]
+    
+    config = await settings_col.find_one({
+        "type": "ranking_config",
+        "$or": [{"user_id": user_id}, {"email": email}]
+    })
+    
+    if not config:
+        return {
+            "preset": "Software Engineer",
+            "weights": {
+                "skills": 40,
+                "experience": 25,
+                "semantic": 15,
+                "projects": 10,
+                "certifications": 5,
+                "quality": 5
+            }
+        }
+        
+    return {
+        "preset": config.get("preset", "Custom"),
+        "weights": config.get("weights", {
+            "skills": 40,
+            "experience": 25,
+            "semantic": 15,
+            "projects": 10,
+            "certifications": 5,
+            "quality": 5
+        })
+    }
+
+@router.post("/ranking")
+async def save_ranking_config(config: RankingConfigUpdate, current_user=Depends(get_current_user)):
+    """Save the recruiter's ranking configuration."""
+    weights = config.weights
+    total = (
+        weights.skills +
+        weights.experience +
+        weights.semantic +
+        weights.projects +
+        weights.certifications +
+        weights.quality
+    )
+    
+    if total != 100:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The total sum of weights must be exactly 100%. Current total is {total}%."
+        )
+        
+    user_id = str(current_user["_id"])
+    email = current_user["email"]
+    
+    await settings_col.update_one(
+        {"type": "ranking_config", "$or": [{"user_id": user_id}, {"email": email}]},
+        {
+            "$set": {
+                "type": "ranking_config",
+                "user_id": user_id,
+                "email": email,
+                "preset": config.preset,
+                "weights": config.weights.model_dump(),
+                "updated_at": datetime.utcnow()
+            }
+        },
+        upsert=True
+    )
+    
+    return {"message": "Ranking configuration saved successfully"}
+
+async def get_recruiter_weights(current_user) -> dict:
+    """Helper function to load dynamic recruiter weights, falling back to default software engineer weights."""
+    if not current_user:
+        return {
+            "skills": 0.40,
+            "experience": 0.25,
+            "semantic": 0.15,
+            "projects": 0.10,
+            "certifications": 0.05,
+            "quality": 0.05
+        }
+    user_id = str(current_user.get("_id", ""))
+    email = current_user.get("email", "")
+    
+    config = await settings_col.find_one({
+        "type": "ranking_config",
+        "$or": [{"user_id": user_id}, {"email": email}]
+    })
+    
+    if not config or "weights" not in config:
+        return {
+            "skills": 0.40,
+            "experience": 0.25,
+            "semantic": 0.15,
+            "projects": 0.10,
+            "certifications": 0.05,
+            "quality": 0.05
+        }
+        
+    w = config["weights"]
+    return {
+        "skills": float(w.get("skills", 40)) / 100.0,
+        "experience": float(w.get("experience", 25)) / 100.0,
+        "semantic": float(w.get("semantic", 15)) / 100.0,
+        "projects": float(w.get("projects", 10)) / 100.0,
+        "certifications": float(w.get("certifications", 5)) / 100.0,
+        "quality": float(w.get("quality", 5)) / 100.0
+    }

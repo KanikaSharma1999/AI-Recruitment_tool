@@ -40,23 +40,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    unauthorized_exception = HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Unauthorized recruiter account",
-    )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
             raise credentials_exception
-        if email.strip().lower() != "sandhyagowda506@gmail.com":
-            raise unauthorized_exception
     except JWTError:
         raise credentials_exception
 
     user = await users_col.find_one({"email": email})
     if user is None:
         raise credentials_exception
-    if user.get("email", "").strip().lower() != "sandhyagowda506@gmail.com":
-        raise unauthorized_exception
     return user
+
